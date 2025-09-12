@@ -101,7 +101,7 @@ public class QueueModHelper {
 
         let queue: ref<QueueModActionQueue> = puppet.GetQueueModActionQueue();
         if IsDefined(queue) {
-            LogChannel(n"DEBUG", s"[QueueMod][Queue] Enqueue: NPC=\(puppet.GetDisplayName()) id=\(ToString(puppet.GetEntityID())) action=PuppetAction");
+            LogChannel(n"DEBUG", s"[QueueMod][Queue] Enqueue: NPC=\(GetLocalizedText(puppet.GetDisplayName())) id=\(ToString(puppet.GetEntityID())) action=PuppetAction");
             return queue.PutActionInQueue(puppetAction);
         }
 
@@ -289,7 +289,7 @@ private func TranslateChoicesIntoQuickSlotCommands(puppetActions: array<ref<Pupp
         LogChannel(n"DEBUG", s"[QueueMod] NPC upload detected - queue enabled: \(queueEnabled), queue full: \(queueFull)");
 
         if queueEnabled && !queueFull {
-            LogChannel(n"DEBUG", s"[QueueMod][Unblock] NPC=\(this.GetDisplayName()) reason=upload-in-progress queueEnabled=\(queueEnabled) queueFull=\(queueFull)");
+            LogChannel(n"DEBUG", s"[QueueMod][Unblock] NPC=\(GetLocalizedText(this.GetDisplayName())) reason=upload-in-progress queueEnabled=\(queueEnabled) queueFull=\(queueFull)");
 
             let i: Int32 = 0;
             let commandsSize: Int32 = ArraySize(commands);
@@ -301,9 +301,9 @@ private func TranslateChoicesIntoQuickSlotCommands(puppetActions: array<ref<Pupp
                         commands[i].m_actionState = EActionInactivityReson.Ready;
 
                         if Equals(commands[i].m_type, gamedataObjectActionType.PuppetQuickHack) {
-                            LogChannel(n"DEBUG", s"[QueueMod][Unblock] Enabled quickhack during upload: type=\(commands[i].m_type)");
+                            LogChannel(n"DEBUG", s"[QueueMod] Unblocked quickhack for queue: \(commands[i].m_type)");
                         } else {
-                            LogChannel(n"DEBUG", s"[QueueMod][Unblock] Preserved Breach Protocol during upload: type=\(commands[i].m_type)");
+                            LogChannel(n"DEBUG", s"[QueueMod] Preserved breach protocol access: \(commands[i].m_type)");
                         }
                     }
                 }
@@ -339,20 +339,22 @@ protected cb func OnUploadProgressStateChanged(evt: ref<UploadProgramProgressEve
         if Equals(evt.progressBarType, EProgressBarType.UPLOAD) {
             if Equals(evt.state, EUploadProgramState.COMPLETED) {
                 let sizeBefore: Int32 = this.GetQueueModActionQueue().GetQueueSize();
-                LogChannel(n"DEBUG", s"[QueueMod][Exec] Upload complete for NPC=\(this.GetDisplayName()) queueSizeBefore=\(sizeBefore)");
+                LogChannel(n"DEBUG", s"[QueueMod][Exec] Upload complete for NPC=\(GetLocalizedText(this.GetDisplayName())) queueSizeBefore=\(sizeBefore)");
 
                 let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
                 if IsDefined(queue) && queue.GetQueueSize() > 0 {
                     let nextAction: ref<DeviceAction> = queue.PopActionInQueue();
                     if IsDefined(nextAction) {
-                        LogChannel(n"DEBUG", s"[QueueMod][Exec] Executing queued action: class=\(nextAction.GetClassName()) on NPC=\(this.GetDisplayName())");
+                        LogChannel(n"DEBUG", s"[QueueMod][Exec] Executing queued action: class=\(nextAction.GetClassName()) on NPC=\(GetLocalizedText(this.GetDisplayName()))");
 
-                        let scriptableAction: ref<ScriptableDeviceAction> = nextAction as ScriptableDeviceAction;
-                        if IsDefined(scriptableAction) {
-                            scriptableAction.RegisterAsRequester(this.GetEntityID());
+                        // Execute only ScriptableDeviceAction via QuickSlotCommandUsed
+                        let saExec: ref<ScriptableDeviceAction> = nextAction as ScriptableDeviceAction;
+                        if IsDefined(saExec) {
                             let quickSlotCmd: ref<QuickSlotCommandUsed> = new QuickSlotCommandUsed();
-                            quickSlotCmd.action = scriptableAction;
+                            quickSlotCmd.action = saExec;
                             this.OnQuickSlotCommandUsed(quickSlotCmd);
+                        } else {
+                            LogChannel(n"DEBUG", s"[QueueMod][Exec] Skip non-ScriptableDeviceAction: class=\(nextAction.GetClassName())");
                         }
                     }
                 } else {
@@ -525,7 +527,13 @@ private func ApplyQuickHack() -> Bool {
         if IsDefined(player) {
             let queueHelper: ref<QueueModHelper> = player.GetQueueModHelper();
             if IsDefined(queueHelper) {
-                let wasQueued: Bool = queueHelper.PutInQuickHackQueue(actionData.m_action);
+                // Queue only ScriptableDeviceAction to ensure proper execution later
+                let saToQueue: ref<ScriptableDeviceAction> = actionData.m_action as ScriptableDeviceAction;
+                if !IsDefined(saToQueue) {
+                    LogChannel(n"DEBUG", s"[QueueMod][Queue] Skip: not a ScriptableDeviceAction (class=\(actionData.m_action.GetClassName()))");
+                    return wrappedMethod();
+                }
+                let wasQueued: Bool = queueHelper.PutInQuickHackQueue(saToQueue);
                 if wasQueued {
                     LogChannel(n"DEBUG", "[QueueMod] Action successfully queued");
                     this.ApplyQueueModCooldownWithData(actionData);
