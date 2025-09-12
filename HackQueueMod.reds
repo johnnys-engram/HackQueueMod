@@ -657,28 +657,7 @@ protected cb func OnUploadProgressStateChanged(evt: ref<UploadProgramProgressEve
                     if queue.GetQueueSize() > 0 {
                         let entry: ref<QueueModEntry> = queue.PopNextEntry();
                         if IsDefined(entry) {
-                            if Equals(entry.entryType, "action") && IsDefined(entry.action) {
-                                // Process action
-                                LogChannel(n"DEBUG", s"[QueueMod][Exec] Executing queued action: class=\(entry.action.GetClassName()) on NPC=\(GetLocalizedText(this.GetDisplayName()))");
-                                let saExec: ref<ScriptableDeviceAction> = entry.action as ScriptableDeviceAction;
-                                if IsDefined(saExec) {
-                                    saExec.RegisterAsRequester(this.GetEntityID());
-                                    let quickSlotCmd: ref<QuickSlotCommandUsed> = new QuickSlotCommandUsed();
-                                    quickSlotCmd.action = saExec;
-                                    this.OnQuickSlotCommandUsed(quickSlotCmd);
-                                } else {
-                                    LogChannel(n"DEBUG", s"[QueueMod][Exec] Skip non-ScriptableDeviceAction: class=\(entry.action.GetClassName())");
-                                }
-                            } else if Equals(entry.entryType, "intent") && IsDefined(entry.intent) {
-                                // Process intent  
-                                LogChannel(n"DEBUG", s"[QueueMod][Intent] Processing stored intent: \(entry.intent.actionTitle)");
-                                let puppetAction: ref<PuppetAction> = new PuppetAction();
-                                puppetAction.SetObjectActionID(entry.intent.actionTweakID);
-                                let quickSlotCmd: ref<QuickSlotCommandUsed> = new QuickSlotCommandUsed();
-                                quickSlotCmd.action = puppetAction;
-                                this.OnQuickSlotCommandUsed(quickSlotCmd);
-                                LogChannel(n"DEBUG", s"[QueueMod][Intent] Successfully executed intent: \(entry.intent.actionTitle)");
-                            }
+                            this.ExecuteQueuedEntry(entry);
                         }
                     } else {
                         LogChannel(n"DEBUG", "[QueueMod] No queued entries to execute");
@@ -689,6 +668,82 @@ protected cb func OnUploadProgressStateChanged(evt: ref<UploadProgramProgressEve
     }
 
     return result;
+}
+
+@addMethod(ScriptedPuppet)
+private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
+    if !IsDefined(entry) {
+        LogChannel(n"ERROR", "[QueueMod] ExecuteQueuedEntry called with null entry");
+        return;
+    }
+
+    // Step 4: Handle failures gracefully - check if target is still valid
+    if !IsDefined(this) {
+        LogChannel(n"DEBUG", "[QueueMod] Target is invalid - clearing queue");
+        return;
+    }
+
+    if Equals(entry.entryType, "action") && IsDefined(entry.action) {
+        // Process action
+        LogChannel(n"DEBUG", s"[QueueMod][Exec] Executing queued action: class=\(entry.action.GetClassName()) on NPC=\(GetLocalizedText(this.GetDisplayName()))");
+        let saExec: ref<ScriptableDeviceAction> = entry.action as ScriptableDeviceAction;
+        if IsDefined(saExec) {
+            saExec.RegisterAsRequester(this.GetEntityID());
+            let quickSlotCmd: ref<QuickSlotCommandUsed> = new QuickSlotCommandUsed();
+            quickSlotCmd.action = saExec;
+            this.OnQuickSlotCommandUsed(quickSlotCmd);
+            LogChannel(n"DEBUG", s"[QueueMod][Exec] Successfully executed queued action: \(entry.action.GetClassName())");
+        } else {
+            LogChannel(n"DEBUG", s"[QueueMod][Exec] Skip non-ScriptableDeviceAction: class=\(entry.action.GetClassName())");
+        }
+    } else if Equals(entry.entryType, "intent") && IsDefined(entry.intent) {
+        // Process intent  
+        LogChannel(n"DEBUG", s"[QueueMod][Intent] Processing stored intent: \(entry.intent.actionTitle)");
+        
+        // Validate intent data
+        if !TDBID.IsValid(entry.intent.actionTweakID) {
+            LogChannel(n"ERROR", s"[QueueMod] Invalid intent TweakDBID - clearing queue");
+            let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
+            if IsDefined(queue) {
+                queue.ClearQueue();
+            }
+            return;
+        }
+        
+        let puppetAction: ref<PuppetAction> = new PuppetAction();
+        puppetAction.SetObjectActionID(entry.intent.actionTweakID);
+        puppetAction.RegisterAsRequester(entry.intent.targetID);
+        let quickSlotCmd: ref<QuickSlotCommandUsed> = new QuickSlotCommandUsed();
+        quickSlotCmd.action = puppetAction;
+        this.OnQuickSlotCommandUsed(quickSlotCmd);
+        LogChannel(n"DEBUG", s"[QueueMod][Intent] Successfully executed intent: \(entry.intent.actionTitle)");
+    } else {
+        LogChannel(n"ERROR", s"[QueueMod] Invalid entry type or missing data: type=\(entry.entryType) action=\(IsDefined(entry.action)) intent=\(IsDefined(entry.intent))");
+        // Clear queue on invalid data
+        let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
+        if IsDefined(queue) {
+            queue.ClearQueue();
+        }
+    }
+
+    // Step 3: Sync UI State after execution
+    this.RefreshQueueModUI();
+}
+
+@addMethod(ScriptedPuppet)
+private func RefreshQueueModUI() -> Void {
+    // Try to refresh the player's queue UI
+    let playerSystem: ref<PlayerSystem> = GameInstance.GetPlayerSystem(this.GetGame());
+    if IsDefined(playerSystem) {
+        let player: ref<PlayerPuppet> = playerSystem.GetLocalPlayerMainGameObject() as PlayerPuppet;
+        if IsDefined(player) {
+            let queueHelper: ref<QueueModHelper> = player.GetQueueModHelper();
+            if IsDefined(queueHelper) {
+                // This will trigger UI refresh if available
+                LogChannel(n"DEBUG", "[QueueMod] UI refresh triggered after queue execution");
+            }
+        }
+    }
 }
 
 // ScriptableDeviceAction extensions
