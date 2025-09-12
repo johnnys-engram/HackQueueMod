@@ -584,7 +584,7 @@ private func TranslateChoicesIntoQuickSlotCommands(puppetActions: array<ref<Pupp
                                                  Equals(ToString(commands[i].m_inactiveReason), "LocKey#7020") ||
                                                  Equals(ToString(commands[i].m_inactiveReason), "LocKey#7019");
                         if isUploadLock {
-                            LogChannel(n"DEBUG", s"[QueueMod][Debug] Found locked command with upload reason: \(ToString(commands[i].m_inactiveReason))");
+                            LogChannel(n"DEBUG", s"[QueueMod][Debug] Found locked command with upload reason: \(GetLocalizedText(commands[i].m_inactiveReason))");
                             
                             if Equals(commands[i].m_type, gamedataObjectActionType.PuppetQuickHack) || Equals(commands[i].m_type, gamedataObjectActionType.MinigameUpload) {
                                 LogChannel(n"DEBUG", s"[QueueMod][Debug] Command type matches - unblocking");
@@ -841,155 +841,184 @@ private func QueueModIsTargetUploading(data: ref<QuickhackData>) -> Bool {
 @wrapMethod(QuickhacksListGameController)
 private func ApplyQuickHack() -> Bool {
     LogChannel(n"DEBUG", "[QueueMod] *** ApplyQuickHack called ***");
-    LogChannel(n"DEBUG", s"[QueueMod] UI State - m_selectedData: \(IsDefined(this.m_selectedData)), m_listController: \(IsDefined(this.m_listController)), m_data size: \(ArraySize(this.m_data))");
 
-    // FIX: Check if we have valid selected data first
-    let currentAction: ref<QuickhackData> = null;
+    if !IsDefined(this.m_selectedData) {
+        LogChannel(n"DEBUG", "[QueueMod] No selectedData - executing normally");
+        return wrappedMethod();
+    }
+
+    let actionName: String = GetLocalizedText(this.m_selectedData.m_title);
+    let targetID: EntityID = this.m_selectedData.m_actionOwner;
     
-    if IsDefined(this.m_selectedData) {
-        currentAction = this.m_selectedData;
-        LogChannel(n"DEBUG", "[QueueMod] Using m_selectedData");
-    } else if IsDefined(this.m_listController) && this.m_listController.HasValidSelection() {
-        // Fallback: get from list controller
-        let selectedIndex: Int32 = this.m_listController.GetSelectedIndex();
-        if selectedIndex >= 0 && selectedIndex < ArraySize(this.m_data) {
-            currentAction = this.m_data[selectedIndex];
-            LogChannel(n"DEBUG", s"[QueueMod] Fallback: using data from list controller index \(selectedIndex)");
-        }
-    }
-    
-    if !IsDefined(currentAction) {
-        LogChannel(n"DEBUG", "[QueueMod] No valid selected data available - executing normally");
+    LogChannel(n"DEBUG", s"[QueueMod] Processing: \(actionName) target: \(ToString(targetID))");
+
+    // CRITICAL: Don't check m_action - it's null in 1.63
+    // Instead, reconstruct from metadata
+    if !EntityID.IsDefined(targetID) {
+        LogChannel(n"DEBUG", "[QueueMod] Invalid target - executing normally");
         return wrappedMethod();
     }
 
-    if !IsDefined(currentAction.m_action) {
-        LogChannel(n"DEBUG", "[QueueMod] No action in selected data - checking for stored intent");
-        LogChannel(n"DEBUG", s"[QueueMod] Debug - currentAction.m_actionOwner: \(ToString(currentAction.m_actionOwner))");
-        LogChannel(n"DEBUG", s"[QueueMod] Debug - currentAction.m_title: \(GetLocalizedText(currentAction.m_title))");
-        
-        // Check if we have a stored intent for this target on the puppet
-        let targetObject: ref<GameObject> = GameInstance.FindEntityByID(this.m_gameInstance, currentAction.m_actionOwner) as GameObject;
-        let targetPuppet: ref<ScriptedPuppet> = targetObject as ScriptedPuppet;
-        if IsDefined(targetPuppet) {
-            let queue: ref<QueueModActionQueue> = targetPuppet.GetQueueModActionQueue();
-            if IsDefined(queue) && queue.HasIntent(currentAction.m_actionOwner) {
-                LogChannel(n"DEBUG", s"[QueueMod] Found stored intent for missing action on target puppet");
-                // The intent will be processed when the upload completes
-                return wrappedMethod();
-            }
-        }
-        
-        LogChannel(n"DEBUG", "[QueueMod] No action in selected data and no stored intent - executing normally");
-        return wrappedMethod();
-    }
-    let actionName: String = GetLocalizedText(currentAction.m_title);
-    
-    LogChannel(n"DEBUG", s"[QueueMod] Processing: \(actionName)");
-
-    // Cooldown gate first
-    if this.QueueModIsOnCooldown(currentAction) {
-        LogChannel(n"DEBUG", s"[QueueMod][Decision] Skip: on cooldown (\(actionName))");
+    // Check cooldown using the selectedData directly
+    if this.QueueModIsOnCooldown(this.m_selectedData) {
+        LogChannel(n"DEBUG", s"[QueueMod] On cooldown: \(actionName)");
         return wrappedMethod();
     }
 
-    // Skip if action is already locked (no point in queuing)
-    if currentAction.m_isLocked {
-        LogChannel(n"DEBUG", s"[QueueMod][Decision] Skip: action already locked (\(actionName))");
-        return wrappedMethod();
-    }
-
-    // FIX: Single, reliable upload detection
+    // Check if we should queue
     let shouldQueue: Bool = this.IsQuickHackCurrentlyUploading();
-    LogChannel(n"DEBUG", s"[QueueMod][Decision] Should queue (upload detected): \(shouldQueue)");
+    LogChannel(n"DEBUG", s"[QueueMod] Should queue: \(shouldQueue)");
+    
+    // Additional debug info for upload detection
+    if !shouldQueue {
+        LogChannel(n"DEBUG", s"[QueueMod][Debug] Upload detection details - Player pool: \(this.QueueModIsPlayerUploading()) UI lock: \(this.QueueModDetectUILock())");
+    }
 
     if shouldQueue {
-        LogChannel(n"DEBUG", s"[QueueMod] Attempting to queue quickhack: \(actionName)");
-
-        // FIX: Validate critical objects first
-        let playerSystem: ref<PlayerSystem> = GameInstance.GetPlayerSystem(this.m_gameInstance);
-        if !IsDefined(playerSystem) {
-            LogChannel(n"DEBUG", "[QueueMod] PlayerSystem not available");
-            return wrappedMethod();
-        }
-
-        let player: ref<PlayerPuppet> = playerSystem.GetLocalPlayerMainGameObject() as PlayerPuppet;
-        if !IsDefined(player) {
-            LogChannel(n"DEBUG", "[QueueMod] Player not available");
-            return wrappedMethod();
-        }
-
-        let queueHelper: ref<QueueModHelper> = player.GetQueueModHelper();
-        if !IsDefined(queueHelper) {
-            LogChannel(n"DEBUG", "[QueueMod] QueueHelper not available");
-            return wrappedMethod();
-        }
-
-        // FIX: Handle PuppetAction properly (NPC quickhacks)
-        let pa: ref<PuppetAction> = currentAction.m_action as PuppetAction;
-        let saToQueue: ref<ScriptableDeviceAction> = null;
-        let uniqueKey: String = "";
-        
-        if IsDefined(pa) {
-            // PuppetActions ARE ScriptableDeviceActions in v1.63
-            saToQueue = pa;
-            if !IsDefined(saToQueue) {
-                LogChannel(n"DEBUG", "[QueueMod][Queue] PuppetAction cannot cast to ScriptableDeviceAction");
-                return wrappedMethod();
+        // Create PuppetAction from metadata (no m_action dependency)
+        let reconstructedAction: ref<PuppetAction> = this.ReconstructActionFromData(this.m_selectedData);
+        if IsDefined(reconstructedAction) {
+            let playerSystem: ref<PlayerSystem> = GameInstance.GetPlayerSystem(this.m_gameInstance);
+            let player: ref<PlayerPuppet> = playerSystem.GetLocalPlayerMainGameObject() as PlayerPuppet;
+            
+            if IsDefined(player) {
+                let queueHelper: ref<QueueModHelper> = player.GetQueueModHelper();
+                if IsDefined(queueHelper) {
+                    let uniqueKey: String = s"\(ToString(targetID))::\(actionName)::\(GameInstance.GetTimeSystem(this.m_gameInstance).GetSimTime())";
+                    
+                    let wasQueued: Bool = queueHelper.PutInQuickHackQueueWithKey(reconstructedAction, uniqueKey);
+                    if wasQueued {
+                        LogChannel(n"DEBUG", s"[QueueMod] Queued reconstructed: \(actionName)");
+                        this.ApplyQueueModCooldownWithData(this.m_selectedData);
+                        this.RefreshQueueModUI();
+                        return true;
+                    }
+                }
             }
-            // Use PuppetAction for key generation
-            let targetKey: String = ToString(pa.GetRequesterID());
-            let actionIdStr: String = TDBID.ToStringDEBUG(saToQueue.GetObjectActionID());
-            uniqueKey = s"\(targetKey)::\(actionIdStr)::\(GameInstance.GetTimeSystem(this.m_gameInstance).GetSimTime())";
-        } else {
-            // FIX: Handle pure ScriptableDeviceAction (devices)
-            saToQueue = currentAction.m_action as ScriptableDeviceAction;
-            if !IsDefined(saToQueue) {
-                LogChannel(n"DEBUG", s"[QueueMod][Queue] Not a queueable action type (class=\(currentAction.m_action.GetClassName()))");
-                return wrappedMethod();
-            }
-            uniqueKey = s"device::\(TDBID.ToStringDEBUG(saToQueue.GetObjectActionID()))::\(GameInstance.GetTimeSystem(this.m_gameInstance).GetSimTime())";
-        }
-        
-        // Execute queue operation
-        let wasQueued: Bool = queueHelper.PutInQuickHackQueueWithKey(saToQueue, uniqueKey);
-        if wasQueued {
-            let actionType: String = IsDefined(pa) ? "NPC" : "Device";
-            LogChannel(n"DEBUG", s"[QueueMod] \(actionType) action successfully queued: \(actionName) key=\(uniqueKey)");
-            this.ApplyQueueModCooldownWithData(currentAction);
-            this.RefreshQueueModUI();
-            return true; // Prevent immediate execution - action is queued
-        } else {
-            let actionType: String = IsDefined(pa) ? "NPC" : "Device";
-            LogChannel(n"DEBUG", s"[QueueMod] Failed to queue \(actionType) action - executing normally");
         }
     }
 
-    // Upload detection failed - store intent on target puppet
-    LogChannel(n"DEBUG", s"[QueueMod] Creating intent for target: \(ToString(currentAction.m_actionOwner)) action: \(actionName)");
+    // Store intent with metadata (no action dependency)
+    this.StoreIntentFromData(this.m_selectedData);
     
-    // Resolve target puppet and store intent there
-    let targetObject: ref<GameObject> = GameInstance.FindEntityByID(this.m_gameInstance, currentAction.m_actionOwner) as GameObject;
+    LogChannel(n"DEBUG", "[QueueMod] Executing normally");
+    return wrappedMethod();
+}
+
+// =============================================================================
+// Phase 2: Action Reconstruction Methods
+// =============================================================================
+
+@addMethod(QuickhacksListGameController)
+private func ReconstructActionFromData(data: ref<QuickhackData>) -> ref<PuppetAction> {
+    if !IsDefined(data) || !EntityID.IsDefined(data.m_actionOwner) {
+        return null;
+    }
+
+    // Find the TweakDBID from the UI data
+    let actionTweakID: TweakDBID = this.FindActionTweakID(data);
+    if !TDBID.IsValid(actionTweakID) {
+        LogChannel(n"DEBUG", s"[QueueMod] Cannot find TweakDBID for: \(GetLocalizedText(data.m_title))");
+        return null;
+    }
+
+    // Create fresh PuppetAction
+    let puppetAction: ref<PuppetAction> = new PuppetAction();
+    puppetAction.SetObjectActionID(actionTweakID);
+    
+    // CRITICAL FIX: Set up action with proper target context
+    let targetObject: ref<GameObject> = GameInstance.FindEntityByID(this.m_gameInstance, data.m_actionOwner) as GameObject;
+    if IsDefined(targetObject) {
+        // Set the executor context for proper target resolution
+        puppetAction.SetExecutor(targetObject);
+        // Register the action against the target
+        puppetAction.RegisterAsRequester(data.m_actionOwner);
+    }
+    
+    LogChannel(n"DEBUG", s"[QueueMod] Reconstructed action: \(GetLocalizedText(data.m_title)) tweakID: \(TDBID.ToStringDEBUG(actionTweakID))");
+    
+    return puppetAction;
+}
+
+@addMethod(QuickhacksListGameController)
+private func FindActionTweakID(data: ref<QuickhackData>) -> TweakDBID {
+    if !IsDefined(data) {
+        return TDBID.None();
+    }
+
+    // Derive from title (common pattern)
+    let titleStr: String = GetLocalizedText(data.m_title);
+    
+    // Common quickhack mappings for 1.63
+    if Equals(titleStr, "Reboot Optics") {
+        return t"QuickHack.BlindHack";
+    }
+    if Equals(titleStr, "Overheat") {
+        return t"QuickHack.OverheatHack";
+    }
+    if Equals(titleStr, "Short Circuit") {
+        return t"QuickHack.ShortCircuitHack";
+    }
+    if Equals(titleStr, "Synapse Burnout") {
+        return t"QuickHack.SynapseBurnoutHack";
+    }
+    if Equals(titleStr, "Distract Enemies") {
+        return t"QuickHack.SuicideHack";
+    }
+    if Equals(titleStr, "Cyberware Malfunction") {
+        return t"QuickHack.MalfunctionHack";
+    }
+    if Equals(titleStr, "System Reset") {
+        return t"QuickHack.SystemCollapseHack";
+    }
+    if Equals(titleStr, "Contagion") {
+        return t"QuickHack.CommsNoiseHack";
+    }
+    if Equals(titleStr, "Memory Wipe") {
+        return t"QuickHack.MemoryWipeHack";
+    }
+    if Equals(titleStr, "Weapon Glitch") {
+        return t"QuickHack.WeaponGlitchHack";
+    }
+    if Equals(titleStr, "Disable Cyberware") {
+        return t"QuickHack.DisableCyberwareHack";
+    }
+    if Equals(titleStr, "Berserk") {
+        return t"QuickHack.BerserkHack";
+    }
+    if Equals(titleStr, "Suicide") {
+        return t"QuickHack.SuicideHack";
+    }
+
+    LogChannel(n"DEBUG", s"[QueueMod] Unknown quickhack title: \(titleStr)");
+    return TDBID.None();
+}
+
+@addMethod(QuickhacksListGameController)
+private func StoreIntentFromData(data: ref<QuickhackData>) -> Void {
+    if !IsDefined(data) || !EntityID.IsDefined(data.m_actionOwner) {
+        return;
+    }
+
+    let targetObject: ref<GameObject> = GameInstance.FindEntityByID(this.m_gameInstance, data.m_actionOwner) as GameObject;
     let targetPuppet: ref<ScriptedPuppet> = targetObject as ScriptedPuppet;
 
     if IsDefined(targetPuppet) {
+        let actionTweakID: TweakDBID = this.FindActionTweakID(data);
+        let actionName: String = GetLocalizedText(data.m_title);
+        
         let intent: ref<QueueModIntent> = QueueModIntent.Create(
-            currentAction.m_actionOwner,
-            currentAction.m_action.GetObjectActionID(),
+            data.m_actionOwner,
+            actionTweakID,
             actionName
         );
         
         let queue: ref<QueueModActionQueue> = targetPuppet.GetQueueModActionQueue();
         if IsDefined(queue) {
             queue.AddIntent(intent);
-            LogChannel(n"DEBUG", s"[QueueMod] Stored intent on target puppet: \(actionName)");
+            LogChannel(n"DEBUG", s"[QueueMod] Stored intent from metadata: \(actionName)");
         }
-    } else {
-        LogChannel(n"DEBUG", s"[QueueMod] Target puppet not found for intent storage: \(ToString(currentAction.m_actionOwner))");
     }
-    
-    LogChannel(n"DEBUG", "[QueueMod] Executing action normally (with intent stored)");
-    return wrappedMethod();
 }
 
 // =============================================================================
