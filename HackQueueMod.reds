@@ -871,7 +871,7 @@ private func ApplyQuickHack() -> Bool {
     
     // Additional debug info for upload detection
     if !shouldQueue {
-        LogChannel(n"DEBUG", s"[QueueMod][Debug] Upload detection details - Player pool: \(this.QueueModIsPlayerUploading()) UI lock: \(this.QueueModDetectUILock())");
+        LogChannel(n"DEBUG", s"[QueueMod][Debug] Upload detection details - UI lock: \(this.QueueModDetectUILock())");
     }
 
     if shouldQueue {
