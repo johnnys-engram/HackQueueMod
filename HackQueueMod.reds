@@ -50,7 +50,27 @@ public class QueueModEntry {
 public class QueueModActionQueue {
     private let m_queueEntries: array<ref<QueueModEntry>>; // SINGLE SOURCE
     private let m_isQueueLocked: Bool;
-    private let m_maxQueueSize: Int32 = 3;
+    private let m_maxQueueSize: Int32;
+    
+    public func Initialize() -> Void {
+        this.m_isQueueLocked = false;
+        this.m_maxQueueSize = this.CalculateMaxQueueSize();
+        LogChannel(n"DEBUG", s"[QueueMod] Queue initialized with max size: \(this.m_maxQueueSize)");
+    }
+    
+    private func CalculateMaxQueueSize() -> Int32 {
+        // Base queue size
+        let baseSize: Int32 = 3;
+        
+        // TODO: Implement dynamic queue size based on perks/cyberware
+        // For now, return base size
+        // Future implementation would check:
+        // - Perk tree for queue size bonuses
+        // - Equipped cyberdeck for queue capacity
+        // - Cyberware modifications
+        
+        return baseSize;
+    }
 
     public func PutActionInQueue(action: ref<DeviceAction>) -> Bool {
         if !IsDefined(action) || this.m_isQueueLocked || ArraySize(this.m_queueEntries) >= this.m_maxQueueSize {
@@ -128,6 +148,13 @@ public class QueueModActionQueue {
 
     public func GetQueueSize() -> Int32 {
         return ArraySize(this.m_queueEntries);
+    }
+    
+    public func GetQueueEntry(index: Int32) -> ref<QueueModEntry> {
+        if index >= 0 && index < ArraySize(this.m_queueEntries) {
+            return this.m_queueEntries[index];
+        }
+        return null;
     }
 
     public func ClearQueue() -> Void {
@@ -271,8 +298,8 @@ public class QueueModActionQueue {
             return true; // No RAM cost
         }
         
-        // TODO: Implement proper RAM reservation system
-        // For now, just log the RAM cost
+        // TODO: Implement proper RAM reservation system for v1.63
+        // For now, just log the RAM cost and allow
         LogChannel(n"DEBUG", s"[QueueMod] Would reserve \(ramCost) RAM for queued action");
         return true; // Always allow for now
     }
@@ -288,7 +315,7 @@ public class QueueModActionQueue {
             return; // No RAM cost
         }
         
-        // TODO: Implement proper RAM refund system
+        // TODO: Implement proper RAM refund system for v1.63
         LogChannel(n"DEBUG", s"[QueueMod] Would refund \(ramCost) RAM for canceled action");
     }
     
@@ -632,6 +659,7 @@ private let m_queueModActionQueue: ref<QueueModActionQueue>;
 public func GetQueueModActionQueue() -> ref<QueueModActionQueue> {
     if !IsDefined(this.m_queueModActionQueue) {
         this.m_queueModActionQueue = new QueueModActionQueue();
+        this.m_queueModActionQueue.Initialize();
     }
     return this.m_queueModActionQueue;
 }
@@ -800,10 +828,14 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
         let saExec: ref<ScriptableDeviceAction> = entry.action as ScriptableDeviceAction;
         if IsDefined(saExec) {
             saExec.RegisterAsRequester(this.GetEntityID());
+            
+            // Apply upload speed modifier
+            this.ApplyUploadSpeedModifier(saExec, entry.uploadSpeedModifier);
+            
                             let quickSlotCmd: ref<QuickSlotCommandUsed> = new QuickSlotCommandUsed();
             quickSlotCmd.action = saExec;
                             this.OnQuickSlotCommandUsed(quickSlotCmd);
-            LogChannel(n"DEBUG", s"[QueueMod][Exec] Successfully executed queued action: \(entry.action.GetClassName())");
+            LogChannel(n"DEBUG", s"[QueueMod][Exec] Successfully executed queued action: \(entry.action.GetClassName()) with speed modifier \(entry.uploadSpeedModifier)");
         } else {
             LogChannel(n"DEBUG", s"[QueueMod][Exec] Skip non-ScriptableDeviceAction: class=\(entry.action.GetClassName())");
         }
@@ -897,7 +929,30 @@ public func GetQueueModPersistenceData() -> String {
     let entityIDStr: String = ToString(this.GetEntityID());
     let queueSizeStr: String = ToString(queueSize);
     let persistenceData: String = s"\(entityIDStr)::\(queueSizeStr)";
-    LogChannel(n"DEBUG", s"[QueueMod][Persistence] Storing queue data: \(persistenceData)");
+    
+    // Add detailed queue entry data
+    let i: Int32 = 0;
+    while i < queueSize {
+        let entry: ref<QueueModEntry> = queue.GetQueueEntry(i);
+        if IsDefined(entry) {
+            if Equals(entry.entryType, "action") && IsDefined(entry.action) {
+                let sa: ref<ScriptableDeviceAction> = entry.action as ScriptableDeviceAction;
+                if IsDefined(sa) {
+                    let actionID: String = TDBID.ToStringDEBUG(sa.GetObjectActionID());
+                    let speedMod: String = ToString(entry.uploadSpeedModifier);
+                    persistenceData = s"\(persistenceData)::action:\(actionID):\(speedMod)";
+                }
+            } else if Equals(entry.entryType, "intent") && IsDefined(entry.intent) {
+                let intentID: String = TDBID.ToStringDEBUG(entry.intent.actionTweakID);
+                let intentTitle: String = entry.intent.actionTitle;
+                let speedMod: String = ToString(entry.uploadSpeedModifier);
+                persistenceData = s"\(persistenceData)::intent:\(intentID):\(intentTitle):\(speedMod)";
+            }
+        }
+        i += 1;
+    }
+    
+    LogChannel(n"DEBUG", s"[QueueMod][Persistence] Storing detailed queue data: \(persistenceData)");
     return persistenceData;
 }
 
@@ -936,6 +991,24 @@ private func NotifyPlayerQueueCanceled(message: String) -> Void {
 private func NotifyPlayerRAMRefunded(amount: Int32) -> Void {
     let message: String = s"RAM refunded: \(amount) units";
     this.NotifyPlayerQueueCanceled(message);
+}
+
+// Upload Speed Modifier Application
+@addMethod(ScriptedPuppet)
+private func ApplyUploadSpeedModifier(action: ref<ScriptableDeviceAction>, speedModifier: Float) -> Void {
+    if !IsDefined(action) || speedModifier <= 0.0 {
+        return;
+    }
+    
+    // TODO: Apply speed modifier to action duration in v1.63
+    // The exact method depends on the available API
+    // For now, just log the modifier
+    LogChannel(n"DEBUG", s"[QueueMod][Speed] Would apply modifier \(speedModifier) to action duration");
+    
+    // Future implementation would:
+    // - Modify action's estimated duration
+    // - Adjust upload time based on modifier
+    // - Apply to the actual upload process
 }
 
 // ScriptableDeviceAction extensions
@@ -1017,16 +1090,76 @@ public func GetQueueModHelper() -> ref<QueueModHelper> {
 
 @addMethod(QuickhacksListGameController)
 private func IsQuickHackCurrentlyUploading() -> Bool {
+    // Rule 1: Selected row UI lock (fastest path)
+    if this.QueueModSelectedIsUILocked() {
+        LogChannel(n"DEBUG", "[QueueMod][Detect] Selected row UI lock indicates upload in progress");
+        return true;
+    }
+
+    // Rule 1b: Generic lock check for unknown reasons
+    if IsDefined(this.m_selectedData) && this.m_selectedData.m_isLocked && 
+       NotEquals(this.m_selectedData.m_actionState, EActionInactivityReson.Ready) {
+        LogChannel(n"DEBUG", "[QueueMod][Detect] Selected item locked with unknown reason → treating as upload");
+        return true;
+    }
+
+    // Rule 1c: Full UI lock scan (fallback for timing races)
+    if this.QueueModDetectUILock() {
+        LogChannel(n"DEBUG", "[QueueMod][Detect] Full UI lock scan indicates upload in progress");
+        return true;
+    }
+
+    // Rule 2: Target check (only if NPC - devices skip pool)
+    if IsDefined(this.m_selectedData) {
+        let targetID: EntityID = this.m_selectedData.m_actionOwner;
+        if EntityID.IsDefined(targetID) {
+            let target: ref<GameObject> = GameInstance.FindEntityByID(this.m_gameInstance, targetID) as GameObject;
+            if IsDefined(target) {
+                // Log target type for debugging
+                LogChannel(n"DEBUG", s"[QueueMod][Detect] Target class: \(ToString(target.GetClassName()))");
+                
+                let puppet: ref<ScriptedPuppet> = target as ScriptedPuppet;
+                if IsDefined(puppet) {
+                    // Only check StatPool for NPCs (ScriptedPuppets)
+                    let uploading: Bool = GameInstance.GetStatPoolsSystem(this.m_gameInstance)
+                        .IsStatPoolAdded(Cast<StatsObjectID>(puppet.GetEntityID()), gamedataStatPoolType.QuickHackUpload);
+                    LogChannel(n"DEBUG", s"[QueueMod][Detect] NPC upload pool: \(uploading)");
+                    return uploading;
+                } else {
+                    // Device detected - rely only on UI lock (already checked above)
+                    LogChannel(n"DEBUG", "[QueueMod][Detect] Device target - UI lock only");
+                    return false;
+                }
+            }
+        }
+    }
+
+    // Rule 4: Fallback to player pool (rare cases)
     let playerSystem: ref<PlayerSystem> = GameInstance.GetPlayerSystem(this.m_gameInstance);
     let player: ref<PlayerPuppet> = playerSystem.GetLocalPlayerMainGameObject() as PlayerPuppet;
-    if !IsDefined(player) {
+    if IsDefined(player) {
+        let hasUploadPool: Bool = GameInstance.GetStatPoolsSystem(this.m_gameInstance)
+            .IsStatPoolAdded(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.QuickHackUpload);
+        LogChannel(n"DEBUG", s"[QueueMod][Detect] Player upload pool (fallback): \(hasUploadPool)");
+        return hasUploadPool;
+    }
+
+    return false;
+}
+
+@addMethod(QuickhacksListGameController)
+private func QueueModSelectedIsUILocked() -> Bool {
+    if !IsDefined(this.m_selectedData) {
         return false;
     }
     
-    // FIX: Primary detection method - StatPool system
-    let hasUploadPool: Bool = GameInstance.GetStatPoolsSystem(this.m_gameInstance).IsStatPoolAdded(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.QuickHackUpload);
-    LogChannel(n"DEBUG", s"[QueueMod][Detect] Player upload pool: \(hasUploadPool)");
-    return hasUploadPool;
+    let d: ref<QuickhackData> = this.m_selectedData;
+    if !d.m_isLocked {
+        return false;
+    }
+    
+    let r: String = ToString(d.m_inactiveReason);
+    return Equals(r, "LocKey#27398") || Equals(r, "LocKey#40765") || Equals(r, "LocKey#7020") || Equals(r, "LocKey#7019");
 }
 
 @addMethod(QuickhacksListGameController)
@@ -1117,8 +1250,12 @@ private func ApplyQuickHack() -> Bool {
     LogChannel(n"DEBUG", s"[QueueMod] Should queue: \(shouldQueue)");
 
     // Additional debug info for upload detection
-    if !shouldQueue {
-        LogChannel(n"DEBUG", s"[QueueMod][Debug] Upload detection details - UI lock: \(this.QueueModDetectUILock())");
+    LogChannel(n"DEBUG", s"[QueueMod][Debug] Upload detection details - UI lock: \(this.QueueModDetectUILock())");
+    
+    // Show target info for debugging
+    if IsDefined(this.m_selectedData) {
+        let targetID: EntityID = this.m_selectedData.m_actionOwner;
+        LogChannel(n"DEBUG", s"[QueueMod][Debug] Target ID: \(ToString(targetID))");
     }
 
     if shouldQueue {
