@@ -1,12 +1,12 @@
 // ============================================================================
-// CP2077 v1.63 Hack Queue Mod - FIXED VERSION
-// Addresses compilation errors and v1.63 compatibility issues
+// CP2077 v1.63 Hack Queue Mod - CLEAN v1.63 IMPLEMENTATION
+// Using proper v1.63 syntax patterns from project examples
 // ============================================================================
 
 // ============================================================================
-// Core Queue Data Structure (SINGLE DEFINITION)
+// Core Queue Data Structure
 // ============================================================================
-public class DeviceActionQueue {
+public class QueueModActionQueue {
     private let m_actionQueue: array<ref<DeviceAction>>;
     private let m_isQueueLocked: Bool;
 
@@ -48,9 +48,9 @@ public class DeviceActionQueue {
 }
 
 // ============================================================================
-// Core Queue Helper System (SINGLE DEFINITION)
+// Core Queue Helper System
 // ============================================================================
-public class QuickHackableQueueHelper {
+public class QueueModHelper {
 
     public func PutInQuickHackQueue(action: ref<DeviceAction>) -> Bool {
         LogChannel(n"DEBUG", "[QueueMod] *** QUEUE SYSTEM ACTIVATED ***");
@@ -66,7 +66,7 @@ public class QuickHackableQueueHelper {
         let sa: ref<ScriptableDeviceAction> = action as ScriptableDeviceAction;
         if IsDefined(sa) {
             LogChannel(n"DEBUG", "[QueueMod] Queueing ScriptableDeviceAction");
-            return sa.QueueQuickHack(action);
+            return sa.QueueModQuickHack(action);
         }
         
         // Try PuppetAction (for NPCs)
@@ -100,7 +100,7 @@ public class QuickHackableQueueHelper {
             return false;
         }
         
-        let queue: ref<DeviceActionQueue> = puppet.GetDeviceActionQueue();
+        let queue: ref<QueueModActionQueue> = puppet.GetQueueModActionQueue();
         if IsDefined(queue) {
             LogChannel(n"DEBUG", "[QueueMod] Successfully queued PuppetAction");
             return queue.PutActionInQueue(puppetAction);
@@ -110,47 +110,6 @@ public class QuickHackableQueueHelper {
         return false;
     }
 
-    public func PopFromQuickHackQueue(action: ref<DeviceAction>) -> ref<DeviceAction> {
-        if !IsDefined(action) {
-            return null;
-        }
-        
-        let sa: ref<ScriptableDeviceAction> = action as ScriptableDeviceAction;
-        if IsDefined(sa) {
-            let q = sa.GetDeviceActionQueue();
-            return IsDefined(q) ? q.PopActionInQueue() : null;
-        }
-        
-        let pa: ref<PuppetAction> = action as PuppetAction;
-        if IsDefined(pa) {
-            return this.PopFromPuppetQueue(pa);
-        }
-        
-        return null;
-    }
-    
-    public func PopFromPuppetQueue(puppetAction: ref<PuppetAction>) -> ref<DeviceAction> {
-        if !IsDefined(puppetAction) {
-            return null;
-        }
-        
-        let targetID: EntityID = puppetAction.GetRequesterID();
-        let gameInstance: GameInstance = puppetAction.GetExecutor().GetGame();
-        let targetObject: ref<GameObject> = GameInstance.FindEntityByID(gameInstance, targetID) as GameObject;
-        
-        if !IsDefined(targetObject) {
-            return null;
-        }
-        
-        let puppet: ref<ScriptedPuppet> = targetObject as ScriptedPuppet;
-        if !IsDefined(puppet) {
-            return null;
-        }
-        
-        let queue: ref<DeviceActionQueue> = puppet.GetDeviceActionQueue();
-        return IsDefined(queue) ? queue.PopActionInQueue() : null;
-    }
-
     public func GetQueueSize(action: ref<DeviceAction>) -> Int32 {
         if !IsDefined(action) {
             return 0;
@@ -158,7 +117,7 @@ public class QuickHackableQueueHelper {
         
         let sa: ref<ScriptableDeviceAction> = action as ScriptableDeviceAction;
         if IsDefined(sa) {
-            let q = sa.GetDeviceActionQueue();
+            let q = sa.GetQueueModActionQueue();
             return IsDefined(q) ? q.GetQueueSize() : 0;
         }
         
@@ -188,62 +147,62 @@ public class QuickHackableQueueHelper {
             return 0;
         }
         
-        let queue: ref<DeviceActionQueue> = puppet.GetDeviceActionQueue();
+        let queue: ref<QueueModActionQueue> = puppet.GetQueueModActionQueue();
         return IsDefined(queue) ? queue.GetQueueSize() : 0;
     }
 }
 
 // ============================================================================
-// ScriptableDeviceAction Extensions (UNIQUE FIELD NAMES)
+// ScriptableDeviceAction Extensions - Using unique method names
 // ============================================================================
 @addField(ScriptableDeviceAction)
-private let m_queueHelper_deviceActionQueue: ref<DeviceActionQueue>;
+private let m_queueModActionQueue: ref<QueueModActionQueue>;
 
 @addMethod(ScriptableDeviceAction)
-public func GetDeviceActionQueue() -> ref<DeviceActionQueue> {
-    if !IsDefined(this.m_queueHelper_deviceActionQueue) {
-        this.m_queueHelper_deviceActionQueue = new DeviceActionQueue();
+public func GetQueueModActionQueue() -> ref<QueueModActionQueue> {
+    if !IsDefined(this.m_queueModActionQueue) {
+        this.m_queueModActionQueue = new QueueModActionQueue();
     }
-    return this.m_queueHelper_deviceActionQueue;
+    return this.m_queueModActionQueue;
 }
 
 @addMethod(ScriptableDeviceAction)
-public func QueueQuickHack(action: ref<DeviceAction>) -> Bool {
+public func QueueModQuickHack(action: ref<DeviceAction>) -> Bool {
     if !IsDefined(action) {
         return false;
     }
-    LogChannel(n"DEBUG", "[QueueMod] ScriptableDeviceAction.QueueQuickHack called");
-    return this.GetDeviceActionQueue().PutActionInQueue(action);
+    LogChannel(n"DEBUG", "[QueueMod] ScriptableDeviceAction.QueueModQuickHack called");
+    return this.GetQueueModActionQueue().PutActionInQueue(action);
 }
 
 @addMethod(ScriptableDeviceAction)
-public func GetQuickHackQueueSize() -> Int32 {
-    let q: ref<DeviceActionQueue> = this.GetDeviceActionQueue();
+public func GetQueueModSize() -> Int32 {
+    let q: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
     return IsDefined(q) ? q.GetQueueSize() : 0;
 }
 
 // ============================================================================
-// Device Extensions (UNIQUE FIELD NAMES)
+// Device Extensions - Using unique method names
 // ============================================================================
 @addField(Device)
-private let m_queueHelper_deviceActionQueue: ref<DeviceActionQueue>;
+private let m_queueModActionQueue: ref<QueueModActionQueue>;
 
 @addMethod(Device)
-public func GetDeviceActionQueue() -> ref<DeviceActionQueue> {
-    if !IsDefined(this.m_queueHelper_deviceActionQueue) {
-        this.m_queueHelper_deviceActionQueue = new DeviceActionQueue();
+public func GetQueueModActionQueue() -> ref<QueueModActionQueue> {
+    if !IsDefined(this.m_queueModActionQueue) {
+        this.m_queueModActionQueue = new QueueModActionQueue();
     }
-    return this.m_queueHelper_deviceActionQueue;
+    return this.m_queueModActionQueue;
 }
 
 @addMethod(Device)
-public func IsActionQueueEnabled() -> Bool {
+public func IsQueueModEnabled() -> Bool {
     return true;
 }
 
 @addMethod(Device)
-public func IsActionQueueFull() -> Bool {
-    let queue: ref<DeviceActionQueue> = this.GetDeviceActionQueue();
+public func IsQueueModFull() -> Bool {
+    let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
     if !IsDefined(queue) {
         return false;
     }
@@ -265,8 +224,8 @@ protected func SendQuickhackCommands(shouldOpen: Bool) -> Void {
     let originalUploadState: Bool = this.m_isQhackUploadInProgerss;
     
     if originalUploadState {
-        let queueEnabled: Bool = this.IsActionQueueEnabled();
-        let queueFull: Bool = this.IsActionQueueFull();
+        let queueEnabled: Bool = this.IsQueueModEnabled();
+        let queueFull: Bool = this.IsQueueModFull();
         
         if queueEnabled && !queueFull {
             LogChannel(n"DEBUG", s"[QueueMod] Device bypassing upload block for queue (device: \(this.GetDisplayName()))");
@@ -279,27 +238,27 @@ protected func SendQuickhackCommands(shouldOpen: Bool) -> Void {
 }
 
 // ============================================================================
-// ScriptedPuppet Extensions (UNIQUE FIELD NAMES)
+// ScriptedPuppet Extensions - Using unique method names
 // ============================================================================
 @addField(ScriptedPuppet)
-private let m_queueHelper_deviceActionQueue: ref<DeviceActionQueue>;
+private let m_queueModActionQueue: ref<QueueModActionQueue>;
 
 @addMethod(ScriptedPuppet)
-public func GetDeviceActionQueue() -> ref<DeviceActionQueue> {
-    if !IsDefined(this.m_queueHelper_deviceActionQueue) {
-        this.m_queueHelper_deviceActionQueue = new DeviceActionQueue();
+public func GetQueueModActionQueue() -> ref<QueueModActionQueue> {
+    if !IsDefined(this.m_queueModActionQueue) {
+        this.m_queueModActionQueue = new QueueModActionQueue();
     }
-    return this.m_queueHelper_deviceActionQueue;
+    return this.m_queueModActionQueue;
 }
 
 @addMethod(ScriptedPuppet)
-public func IsActionQueueEnabled() -> Bool {
+public func IsQueueModEnabled() -> Bool {
     return true;
 }
 
 @addMethod(ScriptedPuppet)
-public func IsActionQueueFull() -> Bool {
-    let queue: ref<DeviceActionQueue> = this.GetDeviceActionQueue();
+public func IsQueueModFull() -> Bool {
+    let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
     if !IsDefined(queue) {
         return false;
     }
@@ -314,7 +273,7 @@ public func IsActionQueueFull() -> Bool {
 }
 
 // ============================================================================
-// ScriptedPuppet TranslateChoicesIntoQuickSlotCommands Wrapper - FIXED
+// ScriptedPuppet TranslateChoicesIntoQuickSlotCommands Wrapper - v1.63 syntax
 // ============================================================================
 @wrapMethod(ScriptedPuppet)
 private func TranslateChoicesIntoQuickSlotCommands(puppetActions: array<ref<PuppetAction>>, out commands: array<ref<QuickhackData>>) -> Void {
@@ -325,8 +284,8 @@ private func TranslateChoicesIntoQuickSlotCommands(puppetActions: array<ref<Pupp
     
     // ONLY intervene when there's an active upload - this preserves normal v1.63 behavior when queue is inactive
     if isOngoingUpload {
-        let queueEnabled: Bool = this.IsActionQueueEnabled();
-        let queueFull: Bool = this.IsActionQueueFull();
+        let queueEnabled: Bool = this.IsQueueModEnabled();
+        let queueFull: Bool = this.IsQueueModFull();
         
         LogChannel(n"DEBUG", s"[QueueMod] NPC upload detected - queue enabled: \(queueEnabled), queue full: \(queueFull)");
         
@@ -381,7 +340,7 @@ private func TranslateChoicesIntoQuickSlotCommands(puppetActions: array<ref<Pupp
 }
 
 // ============================================================================
-// ScriptedPuppet OnUploadProgressStateChanged Wrapper
+// ScriptedPuppet OnUploadProgressStateChanged Wrapper - v1.63 syntax
 // ============================================================================
 @wrapMethod(ScriptedPuppet)
 protected cb func OnUploadProgressStateChanged(evt: ref<UploadProgramProgressEvent>) -> Bool {
@@ -394,7 +353,7 @@ protected cb func OnUploadProgressStateChanged(evt: ref<UploadProgramProgressEve
                 
                 LogChannel(n"DEBUG", "[QueueMod] Upload completed, checking for queued actions");
                 
-                let queue: ref<DeviceActionQueue> = this.GetDeviceActionQueue();
+                let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
                 if IsDefined(queue) && queue.GetQueueSize() > 0 {
                     
                     let nextAction: ref<DeviceAction> = queue.PopActionInQueue();
@@ -423,22 +382,22 @@ protected cb func OnUploadProgressStateChanged(evt: ref<UploadProgramProgressEve
 }
 
 // ============================================================================
-// PlayerPuppet Integration (UNIQUE FIELD NAME)
+// PlayerPuppet Integration - Using unique method names and field names
 // ============================================================================
 @addField(PlayerPuppet)
-private let m_queueHelper_helper: ref<QuickHackableQueueHelper>;
+private let m_queueModHelper: ref<QueueModHelper>;
 
 @addMethod(PlayerPuppet)
-public func GetQueueHelper() -> ref<QuickHackableQueueHelper> {
-    if !IsDefined(this.m_queueHelper_helper) {
-        this.m_queueHelper_helper = new QuickHackableQueueHelper();
+public func GetQueueModHelper() -> ref<QueueModHelper> {
+    if !IsDefined(this.m_queueModHelper) {
+        this.m_queueModHelper = new QueueModHelper();
         LogChannel(n"DEBUG", "[QueueMod] Player loaded - queue system ready");
     }
-    return this.m_queueHelper_helper;
+    return this.m_queueModHelper;
 }
 
 // ============================================================================
-// UI Integration - QuickhacksListGameController 
+// UI Integration - QuickhacksListGameController - Using unique method names
 // ============================================================================
 @wrapMethod(QuickhacksListGameController)
 private func ApplyQuickHack() -> Bool {
@@ -459,7 +418,7 @@ private func ApplyQuickHack() -> Bool {
     LogChannel(n"DEBUG", s"[QueueMod] ApplyQuickHack for: \(actionName)");
     
     // Check if we should queue this action
-    let shouldQueue: Bool = this.ShouldQueueAction(this.m_selectedData);
+    let shouldQueue: Bool = this.ShouldQueueModAction(this.m_selectedData);
     LogChannel(n"DEBUG", s"[QueueMod] Should queue: \(shouldQueue)");
     
     if shouldQueue {
@@ -470,14 +429,14 @@ private func ApplyQuickHack() -> Bool {
         let player: ref<PlayerPuppet> = playerSystem.GetLocalPlayerMainGameObject() as PlayerPuppet;
         
         if IsDefined(player) {
-            let queueHelper: ref<QuickHackableQueueHelper> = player.GetQueueHelper();
+            let queueHelper: ref<QueueModHelper> = player.GetQueueModHelper();
             if IsDefined(queueHelper) {
                 let wasQueued: Bool = queueHelper.PutInQuickHackQueue(this.m_selectedData.m_action);
                 
                 if wasQueued {
                     LogChannel(n"DEBUG", "[QueueMod] Action successfully queued");
-                    this.ApplyCooldownForQueue();
-                    this.RefreshUIAfterQueue();
+                    this.ApplyQueueModCooldown();
+                    this.RefreshQueueModUI();
                     return true;
                 } else {
                     LogChannel(n"DEBUG", "[QueueMod] Failed to queue - executing normally");
@@ -491,7 +450,7 @@ private func ApplyQuickHack() -> Bool {
 }
 
 @addMethod(QuickhacksListGameController)
-private func ShouldQueueAction(data: ref<QuickhackData>) -> Bool {
+private func ShouldQueueModAction(data: ref<QuickhackData>) -> Bool {
     if !IsDefined(data) || !IsDefined(data.m_action) {
         return false;
     }
@@ -509,7 +468,7 @@ private func ShouldQueueAction(data: ref<QuickhackData>) -> Bool {
 }
 
 @addMethod(QuickhacksListGameController)
-private func ApplyCooldownForQueue() -> Void {
+private func ApplyQueueModCooldown() -> Void {
     if !IsDefined(this.m_selectedData) || this.m_selectedData.m_cooldown <= 0.0 {
         return;
     }
@@ -525,7 +484,7 @@ private func ApplyCooldownForQueue() -> Void {
 }
 
 @addMethod(QuickhacksListGameController)
-private func RefreshUIAfterQueue() -> Void {
+private func RefreshQueueModUI() -> Void {
     if ArraySize(this.m_data) > 0 {
         this.PopulateData(this.m_data);
     }
