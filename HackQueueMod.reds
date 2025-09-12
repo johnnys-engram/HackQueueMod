@@ -81,30 +81,29 @@ public class QueueModActionQueue {
         return true;
     }
 
-    public func PopActionInQueue() -> ref<DeviceAction> {
-        // PHASE 3D: Atomic pop operation (no intermediate states)
+    public func PopNextEntry() -> ref<QueueModEntry> {
         if ArraySize(this.m_queueEntries) == 0 {
-            return null; // Early return, no state change
+            return null;
         }
         
         let entry: ref<QueueModEntry> = this.m_queueEntries[0];
         if !IsDefined(entry) {
             LogChannel(n"ERROR", "[QueueMod] Null entry detected - clearing queue for safety");
-            this.ClearQueue(); // v1.63 recovery pattern
+            this.ClearQueue();
             return null;
         }
         
-        // Atomic removal - single operation
         ArrayErase(this.m_queueEntries, 0);
-        
-        // Return action if this was an action entry
-        if Equals(entry.entryType, "action") && IsDefined(entry.action) {
-            LogChannel(n"DEBUG", s"[QueueMod] Action popped: \(entry.fingerprint)");
+        LogChannel(n"DEBUG", s"[QueueMod] Entry popped: type=\(entry.entryType) fingerprint=\(entry.fingerprint)");
+        return entry;
+    }
+
+    public func PopActionInQueue() -> ref<DeviceAction> {
+        let entry: ref<QueueModEntry> = this.PopNextEntry();
+        if IsDefined(entry) && Equals(entry.entryType, "action") && IsDefined(entry.action) {
             return entry.action;
         }
-        
-        LogChannel(n"DEBUG", s"[QueueMod] Intent entry popped: \(entry.fingerprint)");
-        return null; // Intent entries don't return actions
+        return null;
     }
 
     public func GetQueueSize() -> Int32 {
@@ -246,92 +245,7 @@ public class QueueModIntent {
     }
 }
 
-public class QueueModState {
-    public let s_npcUploadOngoing: Bool = false;
-    private let s_intentStore: array<ref<QueueModIntent>>;
-    
-    public func SetNpcUploadOngoing(value: Bool) -> Void {
-        this.s_npcUploadOngoing = value;
-    }
-    
-    public func IsNpcUploadOngoing() -> Bool {
-        return this.s_npcUploadOngoing;
-    }
-    
-    public func AddIntent(intent: ref<QueueModIntent>) -> Bool {
-        if !IsDefined(intent) {
-            return false;
-        }
-        ArrayPush(this.s_intentStore, intent);
-        LogChannel(n"DEBUG", s"[QueueMod] Intent stored globally: \(intent.actionTitle) for target: \(ToString(intent.targetID))");
-        return true;
-    }
-    
-    public func ConsumeIntent(targetID: EntityID) -> ref<QueueModIntent> {
-        LogChannel(n"DEBUG", s"[QueueMod] ConsumeIntent called for target: \(ToString(targetID))");
-        LogChannel(n"DEBUG", s"[QueueMod] Stored intents count: \(ArraySize(this.s_intentStore))");
-        
-        let i: Int32 = 0;
-        while i < ArraySize(this.s_intentStore) {
-            let intent = this.s_intentStore[i];
-            LogChannel(n"DEBUG", s"[QueueMod] Checking intent \(i): target=\(ToString(intent.targetID)) action=\(intent.actionTitle)");
-            if Equals(intent.targetID, targetID) {
-                ArrayRemove(this.s_intentStore, intent);
-                LogChannel(n"DEBUG", "[QueueMod] Intent consumed globally: " + intent.actionTitle);
-                return intent;
-            }
-            i += 1;
-        }
-        LogChannel(n"DEBUG", "[QueueMod] No matching intent found for target");
-        return null;
-    }
-    
-    public func HasIntent(targetID: EntityID) -> Bool {
-        let i: Int32 = 0;
-        while i < ArraySize(this.s_intentStore) {
-            let intent = this.s_intentStore[i];
-            if Equals(intent.targetID, targetID) {
-                return true;
-            }
-            i += 1;
-        }
-        return false;
-    }
-    
-    public func ClearIntents() -> Void {
-        ArrayClear(this.s_intentStore);
-        LogChannel(n"DEBUG", "[QueueMod] All intents cleared");
-    }
-    
-    public func ListAllIntents() -> Void {
-        LogChannel(n"DEBUG", s"[QueueMod] === STORED INTENTS (count: \(ArraySize(this.s_intentStore))) ===");
-        let i: Int32 = 0;
-        while i < ArraySize(this.s_intentStore) {
-            let intent = this.s_intentStore[i];
-            LogChannel(n"DEBUG", s"[QueueMod] Intent \(i): target=\(ToString(intent.targetID)) action=\(intent.actionTitle)");
-            i += 1;
-        }
-        LogChannel(n"DEBUG", "[QueueMod] === END INTENTS ===");
-    }
-}
-
-// Global state instance - using a different approach
-public class QueueModGlobalState {
-    private let s_instance: ref<QueueModState>;
-    
-    public func GetInstance() -> ref<QueueModState> {
-        if !IsDefined(this.s_instance) {
-            this.s_instance = new QueueModState();
-        }
-        return this.s_instance;
-    }
-}
-
-// Helper function to get global state
-public func GetQueueModGlobalState() -> ref<QueueModState> {
-    let globalState: ref<QueueModGlobalState> = new QueueModGlobalState();
-    return globalState.GetInstance();
-}
+// Global state removed - using per-puppet storage only
 
 // Core helper with v1.63-compatible patterns
 public class QueueModHelper {
@@ -723,61 +637,43 @@ protected cb func OnUploadProgressStateChanged(evt: ref<UploadProgramProgressEve
                 let sizeBefore: Int32 = this.GetQueueModActionQueue().GetQueueSize();
                 LogChannel(n"DEBUG", s"[QueueMod][Exec] Upload complete for NPC=\(GetLocalizedText(this.GetDisplayName())) queueSizeBefore=\(sizeBefore)");
 
-                // First check for stored intents
-                LogChannel(n"DEBUG", s"[QueueMod][Intent] Checking for stored intents for target: \(ToString(this.GetEntityID()))");
-                GetQueueModGlobalState().ListAllIntents();
-                let intent: ref<QueueModIntent> = GetQueueModGlobalState().ConsumeIntent(this.GetEntityID());
-                if IsDefined(intent) {
-                    LogChannel(n"DEBUG", s"[QueueMod][Intent] Processing stored intent: \(intent.actionTitle)");
-                    
-                    // Create a new ScriptableDeviceAction from the intent
-                    LogChannel(n"DEBUG", s"[QueueMod][Intent] Executing stored intent: \(intent.actionTitle)");
-                    
-                    // Try to create a PuppetAction from the intent
-                    let puppetAction: ref<PuppetAction> = new PuppetAction();
-                    puppetAction.SetObjectActionID(intent.actionTweakID);
-                    // Note: PuppetAction doesn't have SetRequesterID, requester is set via context
-                    
-                    if IsDefined(puppetAction) {
-                        // Execute the action via QuickSlotCommandUsed
-                        let quickSlotCmd: ref<QuickSlotCommandUsed> = new QuickSlotCommandUsed();
-                        quickSlotCmd.action = puppetAction;
-                        
-                        this.OnQuickSlotCommandUsed(quickSlotCmd);
-                        LogChannel(n"DEBUG", s"[QueueMod][Intent] Successfully executed intent: \(intent.actionTitle)");
-                    } else {
-                        LogChannel(n"DEBUG", s"[QueueMod][Intent] Failed to create PuppetAction from intent: \(intent.actionTitle)");
+                // Check THIS puppet's queue for intents and actions
+                let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
+                if IsDefined(queue) {
+                    // CRITICAL: Validate before processing
+                    if !queue.ValidateQueueIntegrity() {
+                        LogChannel(n"ERROR", "[QueueMod] Queue integrity failed - skipping execution");
+                        return result;
                     }
-                } else {
-                    // Fall back to regular queue processing
-                    let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
-                    if IsDefined(queue) {
-                        // CRITICAL: Validate before processing
-                        if !queue.ValidateQueueIntegrity() {
-                            LogChannel(n"ERROR", "[QueueMod] Queue integrity failed - skipping execution");
-                            return result;
-                        }
-                        
-                        if queue.GetQueueSize() > 0 {
-                            let nextAction: ref<DeviceAction> = queue.PopActionInQueue();
-                            if IsDefined(nextAction) {
-                                LogChannel(n"DEBUG", s"[QueueMod][Exec] Executing queued action: class=\(nextAction.GetClassName()) on NPC=\(GetLocalizedText(this.GetDisplayName()))");
-
-                                // Execute only ScriptableDeviceAction via QuickSlotCommandUsed
-                                let saExec: ref<ScriptableDeviceAction> = nextAction as ScriptableDeviceAction;
+                    
+                    if queue.GetQueueSize() > 0 {
+                        let entry: ref<QueueModEntry> = queue.PopNextEntry();
+                        if IsDefined(entry) {
+                            if Equals(entry.entryType, "action") && IsDefined(entry.action) {
+                                // Process action
+                                LogChannel(n"DEBUG", s"[QueueMod][Exec] Executing queued action: class=\(entry.action.GetClassName()) on NPC=\(GetLocalizedText(this.GetDisplayName()))");
+                                let saExec: ref<ScriptableDeviceAction> = entry.action as ScriptableDeviceAction;
                                 if IsDefined(saExec) {
-                                    // Ensure the NPC is the requester/target context
                                     saExec.RegisterAsRequester(this.GetEntityID());
                                     let quickSlotCmd: ref<QuickSlotCommandUsed> = new QuickSlotCommandUsed();
                                     quickSlotCmd.action = saExec;
                                     this.OnQuickSlotCommandUsed(quickSlotCmd);
                                 } else {
-                                    LogChannel(n"DEBUG", s"[QueueMod][Exec] Skip non-ScriptableDeviceAction: class=\(nextAction.GetClassName())");
+                                    LogChannel(n"DEBUG", s"[QueueMod][Exec] Skip non-ScriptableDeviceAction: class=\(entry.action.GetClassName())");
                                 }
+                            } else if Equals(entry.entryType, "intent") && IsDefined(entry.intent) {
+                                // Process intent  
+                                LogChannel(n"DEBUG", s"[QueueMod][Intent] Processing stored intent: \(entry.intent.actionTitle)");
+                                let puppetAction: ref<PuppetAction> = new PuppetAction();
+                                puppetAction.SetObjectActionID(entry.intent.actionTweakID);
+                                let quickSlotCmd: ref<QuickSlotCommandUsed> = new QuickSlotCommandUsed();
+                                quickSlotCmd.action = puppetAction;
+                                this.OnQuickSlotCommandUsed(quickSlotCmd);
+                                LogChannel(n"DEBUG", s"[QueueMod][Intent] Successfully executed intent: \(entry.intent.actionTitle)");
                             }
-                        } else {
-                            LogChannel(n"DEBUG", "[QueueMod] No queued actions to execute");
                         }
+                    } else {
+                        LogChannel(n"DEBUG", "[QueueMod] No queued entries to execute");
                     }
                 }
             }
@@ -960,12 +856,16 @@ private func ApplyQuickHack() -> Bool {
         LogChannel(n"DEBUG", s"[QueueMod] Debug - currentAction.m_actionOwner: \(ToString(currentAction.m_actionOwner))");
         LogChannel(n"DEBUG", s"[QueueMod] Debug - currentAction.m_title: \(GetLocalizedText(currentAction.m_title))");
         
-        // Check if we have a stored intent for this target
-        let intent: ref<QueueModIntent> = GetQueueModGlobalState().ConsumeIntent(currentAction.m_actionOwner);
-        if IsDefined(intent) {
-            LogChannel(n"DEBUG", s"[QueueMod] Found stored intent for missing action: \(intent.actionTitle)");
-            // The intent will be processed when the upload completes
-            return wrappedMethod();
+        // Check if we have a stored intent for this target on the puppet
+        let targetObject: ref<GameObject> = GameInstance.FindEntityByID(this.m_gameInstance, currentAction.m_actionOwner) as GameObject;
+        let targetPuppet: ref<ScriptedPuppet> = targetObject as ScriptedPuppet;
+        if IsDefined(targetPuppet) {
+            let queue: ref<QueueModActionQueue> = targetPuppet.GetQueueModActionQueue();
+            if IsDefined(queue) && queue.HasIntent(currentAction.m_actionOwner) {
+                LogChannel(n"DEBUG", s"[QueueMod] Found stored intent for missing action on target puppet");
+                // The intent will be processed when the upload completes
+                return wrappedMethod();
+            }
         }
         
         LogChannel(n"DEBUG", "[QueueMod] No action in selected data and no stored intent - executing normally");
@@ -1053,17 +953,27 @@ private func ApplyQuickHack() -> Bool {
         }
     }
 
-    // Upload detection failed - store intent for later processing
+    // Upload detection failed - store intent on target puppet
     LogChannel(n"DEBUG", s"[QueueMod] Creating intent for target: \(ToString(currentAction.m_actionOwner)) action: \(actionName)");
-    let intent: ref<QueueModIntent> = QueueModIntent.Create(
-        currentAction.m_actionOwner,
-        currentAction.m_action.GetObjectActionID(),
-        actionName
-    );
     
-    // Store intent in global state for later consumption
-    if GetQueueModGlobalState().AddIntent(intent) {
-        LogChannel(n"DEBUG", s"[QueueMod] Stored intent: \(actionName) (upload detection lag)");
+    // Resolve target puppet and store intent there
+    let targetObject: ref<GameObject> = GameInstance.FindEntityByID(this.m_gameInstance, currentAction.m_actionOwner) as GameObject;
+    let targetPuppet: ref<ScriptedPuppet> = targetObject as ScriptedPuppet;
+
+    if IsDefined(targetPuppet) {
+        let intent: ref<QueueModIntent> = QueueModIntent.Create(
+            currentAction.m_actionOwner,
+            currentAction.m_action.GetObjectActionID(),
+            actionName
+        );
+        
+        let queue: ref<QueueModActionQueue> = targetPuppet.GetQueueModActionQueue();
+        if IsDefined(queue) {
+            queue.AddIntent(intent);
+            LogChannel(n"DEBUG", s"[QueueMod] Stored intent on target puppet: \(actionName)");
+        }
+    } else {
+        LogChannel(n"DEBUG", s"[QueueMod] Target puppet not found for intent storage: \(ToString(currentAction.m_actionOwner))");
     }
     
     LogChannel(n"DEBUG", "[QueueMod] Executing action normally (with intent stored)");
