@@ -60,18 +60,19 @@ public class QueueModHelper {
 
         LogChannel(n"DEBUG", s"[QueueMod] Attempting to queue action: \(action.GetClassName())");
 
-        // Try ScriptableDeviceAction first (for Devices)
-        let sa: ref<ScriptableDeviceAction> = action as ScriptableDeviceAction;
-        if IsDefined(sa) {
-            LogChannel(n"DEBUG", "[QueueMod] Queueing ScriptableDeviceAction");
-            return sa.QueueModQuickHack(action);
-        }
-
-        // Try PuppetAction (for NPCs)
+        // Prefer PuppetAction (NPC) to ensure NPC queue receives the action
         let pa: ref<PuppetAction> = action as PuppetAction;
         if IsDefined(pa) {
-            LogChannel(n"DEBUG", "[QueueMod] Queueing PuppetAction");
+            let requesterID: EntityID = pa.GetRequesterID();
+            LogChannel(n"DEBUG", s"[QueueMod][Queue] Route: NPC queue, requesterID=\(ToString(requesterID))");
             return this.QueueActionOnPuppet(pa);
+        }
+
+        // Otherwise, fall back to ScriptableDeviceAction (devices, terminals, etc.)
+        let sa: ref<ScriptableDeviceAction> = action as ScriptableDeviceAction;
+        if IsDefined(sa) {
+            LogChannel(n"DEBUG", s"[QueueMod][Queue] Route: Action's internal queue, actionType=\(action.GetClassName())");
+            return sa.QueueModQuickHack(action);
         }
 
         LogChannel(n"DEBUG", "[QueueMod] Unknown action type - cannot queue");
@@ -88,19 +89,19 @@ public class QueueModHelper {
         let targetObject: ref<GameObject> = GameInstance.FindEntityByID(gameInstance, targetID) as GameObject;
 
         if !IsDefined(targetObject) {
-            LogChannel(n"DEBUG", "[QueueMod] Cannot find target object for puppet action");
+            LogChannel(n"DEBUG", s"[QueueMod][Queue] Abort: requester not found, requesterID=\(ToString(targetID))");
             return false;
         }
 
         let puppet: ref<ScriptedPuppet> = targetObject as ScriptedPuppet;
         if !IsDefined(puppet) {
-            LogChannel(n"DEBUG", "[QueueMod] Target is not a ScriptedPuppet");
+            LogChannel(n"DEBUG", s"[QueueMod][Queue] Abort: requester not a ScriptedPuppet, requesterID=\(ToString(targetID))");
             return false;
         }
 
         let queue: ref<QueueModActionQueue> = puppet.GetQueueModActionQueue();
         if IsDefined(queue) {
-            LogChannel(n"DEBUG", "[QueueMod] Successfully queued PuppetAction");
+            LogChannel(n"DEBUG", s"[QueueMod][Queue] Enqueue: NPC=\(puppet.GetDisplayName()) id=\(ToString(puppet.GetEntityID())) action=PuppetAction");
             return queue.PutActionInQueue(puppetAction);
         }
 
@@ -288,7 +289,7 @@ private func TranslateChoicesIntoQuickSlotCommands(puppetActions: array<ref<Pupp
         LogChannel(n"DEBUG", s"[QueueMod] NPC upload detected - queue enabled: \(queueEnabled), queue full: \(queueFull)");
 
         if queueEnabled && !queueFull {
-            LogChannel(n"DEBUG", s"[QueueMod] NPC selective unblocking for queue (NPC: \(this.GetDisplayName()))");
+            LogChannel(n"DEBUG", s"[QueueMod][Unblock] NPC=\(this.GetDisplayName()) reason=upload-in-progress queueEnabled=\(queueEnabled) queueFull=\(queueFull)");
 
             let i: Int32 = 0;
             let commandsSize: Int32 = ArraySize(commands);
@@ -300,9 +301,9 @@ private func TranslateChoicesIntoQuickSlotCommands(puppetActions: array<ref<Pupp
                         commands[i].m_actionState = EActionInactivityReson.Ready;
 
                         if Equals(commands[i].m_type, gamedataObjectActionType.PuppetQuickHack) {
-                            LogChannel(n"DEBUG", s"[QueueMod] Unblocked quickhack for queue: \(commands[i].m_type)");
+                            LogChannel(n"DEBUG", s"[QueueMod][Unblock] Enabled quickhack during upload: type=\(commands[i].m_type)");
                         } else {
-                            LogChannel(n"DEBUG", s"[QueueMod] Preserved breach protocol access: \(commands[i].m_type)");
+                            LogChannel(n"DEBUG", s"[QueueMod][Unblock] Preserved Breach Protocol during upload: type=\(commands[i].m_type)");
                         }
                     }
                 }
@@ -337,13 +338,14 @@ protected cb func OnUploadProgressStateChanged(evt: ref<UploadProgramProgressEve
     if Equals(evt.progressBarContext, EProgressBarContext.QuickHack) {
         if Equals(evt.progressBarType, EProgressBarType.UPLOAD) {
             if Equals(evt.state, EUploadProgramState.COMPLETED) {
-                LogChannel(n"DEBUG", "[QueueMod] Upload completed, checking for queued actions");
+                let sizeBefore: Int32 = this.GetQueueModActionQueue().GetQueueSize();
+                LogChannel(n"DEBUG", s"[QueueMod][Exec] Upload complete for NPC=\(this.GetDisplayName()) queueSizeBefore=\(sizeBefore)");
 
                 let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
                 if IsDefined(queue) && queue.GetQueueSize() > 0 {
                     let nextAction: ref<DeviceAction> = queue.PopActionInQueue();
                     if IsDefined(nextAction) {
-                        LogChannel(n"DEBUG", "[QueueMod] Executing next queued action on NPC");
+                        LogChannel(n"DEBUG", s"[QueueMod][Exec] Executing queued action: class=\(nextAction.GetClassName()) on NPC=\(this.GetDisplayName())");
 
                         let scriptableAction: ref<ScriptableDeviceAction> = nextAction as ScriptableDeviceAction;
                         if IsDefined(scriptableAction) {
@@ -362,6 +364,8 @@ protected cb func OnUploadProgressStateChanged(evt: ref<UploadProgramProgressEve
 
     return result;
 }
+
+// (Removed: PlayerPuppet upload wrapper - not supported on 1.63)
 
 // =============================================================================
 // PlayerPuppet Integration
@@ -430,7 +434,41 @@ private func IsQuickHackCurrentlyUploading() -> Bool {
         return false;
     }
     let hasUploadPool: Bool = GameInstance.GetStatPoolsSystem(this.m_gameInstance).IsStatPoolAdded(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.QuickHackUpload);
-    return hasUploadPool;
+
+    // UI-level lock detection fallback: scan current quickhack entries for the upload lock reason
+    let uiShowsUploadLock: Bool = this.QueueModDetectUILock();
+    LogChannel(n"DEBUG", s"[QueueMod][Detect] Player upload pool: \(hasUploadPool), UI shows upload lock: \(uiShowsUploadLock)");
+    return hasUploadPool || uiShowsUploadLock;
+}
+
+@addMethod(QuickhacksListGameController)
+private func QueueModDetectUILock() -> Bool {
+    let i: Int32 = 0;
+    while i < ArraySize(this.m_data) {
+        let entry: ref<QuickhackData> = this.m_data[i];
+        if IsDefined(entry) && entry.m_isLocked && Equals(entry.m_inactiveReason, "LocKey#27398") {
+            return true;
+        }
+        i += 1;
+    }
+    return false;
+}
+
+@addMethod(QuickhacksListGameController)
+private func QueueModIsTargetUploading(data: ref<QuickhackData>) -> Bool {
+    if !IsDefined(data) || !IsDefined(data.m_action) {
+        return false;
+    }
+    let puppetAction: ref<PuppetAction> = data.m_action as PuppetAction;
+    if IsDefined(puppetAction) {
+        let targetID: EntityID = puppetAction.GetRequesterID();
+        let targetObject: ref<GameObject> = GameInstance.FindEntityByID(this.m_gameInstance, targetID) as GameObject;
+        if IsDefined(targetObject) {
+            let uploading: Bool = GameInstance.GetStatPoolsSystem(this.m_gameInstance).IsStatPoolAdded(Cast<StatsObjectID>(targetObject.GetEntityID()), gamedataStatPoolType.QuickHackUpload);
+            return uploading;
+        }
+    }
+    return false;
 }
 
 @addMethod(QuickhacksListGameController)
@@ -467,8 +505,14 @@ private func ApplyQuickHack() -> Bool {
     let actionName: String = GetLocalizedText(actionData.m_title);
     LogChannel(n"DEBUG", s"[QueueMod] ApplyQuickHack for: \(actionName)");
 
-    let shouldQueue: Bool = this.IsQuickHackCurrentlyUploading();
-    LogChannel(n"DEBUG", s"[QueueMod] Should queue: \(shouldQueue)");
+    // Prefer per-action UI lock, then target NPC StatPool, then global UI scan, then player StatPool
+    let uiLockThisAction: Bool = actionData.m_isLocked && Equals(actionData.m_inactiveReason, "LocKey#27398");
+    let targetUploading: Bool = this.QueueModIsTargetUploading(actionData);
+    let uiLockAny: Bool = this.QueueModDetectUILock();
+    let statPoolUploading: Bool = this.IsQuickHackCurrentlyUploading();
+    let shouldQueue: Bool = uiLockThisAction || targetUploading || uiLockAny || statPoolUploading;
+    LogChannel(n"DEBUG", s"[QueueMod][Detect] This action locked by upload: \(uiLockThisAction), Target NPC uploading: \(targetUploading), Any UI lock: \(uiLockAny), Player upload pool: \(statPoolUploading)");
+    LogChannel(n"DEBUG", s"[QueueMod][Decision] Queue second hack: \(shouldQueue)");
 
     if shouldQueue {
         LogChannel(n"DEBUG", s"[QueueMod] Attempting to queue quickhack: \(actionName)");
