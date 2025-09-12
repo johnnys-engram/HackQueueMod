@@ -38,6 +38,20 @@ public class QueueModActionQueue {
     private let m_isQueueLocked: Bool;
     private let m_maxQueueSize: Int32 = 3;
 
+    public func PutActionInQueue(action: ref<DeviceAction>) -> Bool {
+        if !IsDefined(action) || this.m_isQueueLocked || ArraySize(this.m_queueEntries) >= this.m_maxQueueSize {
+            return false;
+        }
+        
+        // Generate automatic key for keyless operations
+        let sa: ref<ScriptableDeviceAction> = action as ScriptableDeviceAction;
+        if IsDefined(sa) {
+            let autoKey: String = s"auto::\(TDBID.ToStringDEBUG(sa.GetObjectActionID()))::\(GameInstance.GetTimeSystem(GetGameInstance()).GetGameTimeStamp())";
+            return this.PutActionInQueueWithKey(action, autoKey);
+        }
+        return false;
+    }
+
     public func PutActionInQueueWithKey(action: ref<DeviceAction>, key: String) -> Bool {
         // PHASE 3A: Comprehensive validation (v1.63 IsDefined pattern)
         if !IsDefined(action) || this.m_isQueueLocked || ArraySize(this.m_queueEntries) >= this.m_maxQueueSize {
@@ -110,6 +124,50 @@ public class QueueModActionQueue {
         this.m_isQueueLocked = false;
     }
 
+    // Intent management methods
+    public func AddIntent(intent: ref<QueueModIntent>) -> Bool {
+        if !IsDefined(intent) || this.m_isQueueLocked || ArraySize(this.m_queueEntries) >= this.m_maxQueueSize {
+            return false;
+        }
+        
+        let entry: ref<QueueModEntry> = QueueModEntry.CreateIntent(intent);
+        if !IsDefined(entry) {
+            return false;
+        }
+        
+        ArrayPush(this.m_queueEntries, entry);
+        LogChannel(n"DEBUG", s"[QueueMod] Intent added: \(intent.actionTitle)");
+        return true;
+    }
+
+    public func ConsumeIntent(targetID: EntityID) -> ref<QueueModIntent> {
+        let i: Int32 = 0;
+        while i < ArraySize(this.m_queueEntries) {
+            let entry: ref<QueueModEntry> = this.m_queueEntries[i];
+            if IsDefined(entry) && Equals(entry.entryType, "intent") && 
+               IsDefined(entry.intent) && Equals(entry.intent.targetID, targetID) {
+                ArrayErase(this.m_queueEntries, i);
+                LogChannel(n"DEBUG", s"[QueueMod] Intent consumed: \(entry.intent.actionTitle)");
+                return entry.intent;
+            }
+            i += 1;
+        }
+        return null;
+    }
+
+    public func HasIntent(targetID: EntityID) -> Bool {
+        let i: Int32 = 0;
+        while i < ArraySize(this.m_queueEntries) {
+            let entry: ref<QueueModEntry> = this.m_queueEntries[i];
+            if IsDefined(entry) && Equals(entry.entryType, "intent") && 
+               IsDefined(entry.intent) && Equals(entry.intent.targetID, targetID) {
+                return true;
+            }
+            i += 1;
+        }
+        return false;
+    }
+
     // PHASE 4: Emergency Recovery with Event-Driven Cleanup
     public func ValidateQueueIntegrity() -> Bool {
         let isValid: Bool = true;
@@ -149,9 +207,16 @@ public class QueueModActionQueue {
             let entry: ref<QueueModEntry> = this.m_queueEntries[i];
             if IsDefined(entry) {
                 if Equals(entry.entryType, "action") && IsDefined(entry.action) {
-                    ArrayPush(cleanEntries, entry);
+                    // ADD: Validate action is still usable
+                    let sa: ref<ScriptableDeviceAction> = entry.action as ScriptableDeviceAction;
+                    if IsDefined(sa) && TDBID.IsValid(sa.GetObjectActionID()) {
+                        ArrayPush(cleanEntries, entry);
+                    }
                 } else if Equals(entry.entryType, "intent") && IsDefined(entry.intent) {
-                    ArrayPush(cleanEntries, entry);
+                    // ADD: Validate intent is still usable  
+                    if TDBID.IsValid(entry.intent.actionTweakID) {
+                        ArrayPush(cleanEntries, entry);
+                    }
                 }
             }
             i += 1;
@@ -318,8 +383,11 @@ public class QueueModHelper {
             if IsDefined(puppet) {
                 let queue: ref<QueueModActionQueue> = puppet.GetQueueModActionQueue();
                 if IsDefined(queue) {
-                    // Validate integrity before operation (v1.63 pattern)
-                    queue.ValidateQueueIntegrity();
+                    // FIX: Handle validation failure properly
+                    if !queue.ValidateQueueIntegrity() {
+                        LogChannel(n"ERROR", "[QueueMod] Queue validation failed - aborting queue operation");
+                        return false; // Don't proceed with corrupted queue
+                    }
                     LogChannel(n"DEBUG", s"[QueueMod][Queue] EnqueueWithKey: NPC=\(GetLocalizedText(puppet.GetDisplayName())) key=\(key)");
                     return queue.PutActionInQueueWithKey(action, key);
                 }
@@ -333,8 +401,11 @@ public class QueueModHelper {
         if IsDefined(sa) {
             let queue: ref<QueueModActionQueue> = sa.GetQueueModActionQueue();
             if IsDefined(queue) {
-                // Validate integrity before operation (v1.63 pattern)
-                queue.ValidateQueueIntegrity();
+                // FIX: Handle validation failure properly
+                if !queue.ValidateQueueIntegrity() {
+                    LogChannel(n"ERROR", "[QueueMod] Queue validation failed - aborting queue operation");
+                    return false; // Don't proceed with corrupted queue
+                }
                 LogChannel(n"DEBUG", s"[QueueMod][Queue] EnqueueWithKey: Action queue key=\(key)");
                 return queue.PutActionInQueueWithKey(action, key);
             }
@@ -368,7 +439,7 @@ public class QueueModHelper {
         if IsDefined(queue) {
             LogChannel(n"DEBUG", s"[QueueMod][Queue] Enqueue: NPC=\(GetLocalizedText(puppet.GetDisplayName())) id=\(ToString(puppet.GetEntityID())) action=PuppetAction");
             // Generate a unique key for the action
-            let uniqueKey: String = s"\(ToString(puppetAction.GetRequesterID()))::\(TDBID.ToStringDEBUG(puppetAction.GetObjectActionID()))::\(GameInstance.GetTimeSystem(puppetAction.GetExecutor().GetGame()).GetGameTimeStamp())";
+            let uniqueKey: String = this.GenerateQueueKey(puppetAction);
             return queue.PutActionInQueueWithKey(puppetAction, uniqueKey);
         }
 
@@ -452,6 +523,23 @@ public class QueueModHelper {
         
         // Additional validation can be added here
         return true;
+    }
+
+    // Standardized key generation to prevent duplicates
+    private func GenerateQueueKey(action: ref<DeviceAction>) -> String {
+        let pa: ref<PuppetAction> = action as PuppetAction;
+        if IsDefined(pa) {
+            let targetKey: String = ToString(pa.GetRequesterID());
+            let actionIdStr: String = TDBID.ToStringDEBUG(pa.GetObjectActionID());
+            return s"npc::\(targetKey)::\(actionIdStr)::\(GameInstance.GetTimeSystem(pa.GetExecutor().GetGame()).GetSimTime())";
+        }
+        
+        let sa: ref<ScriptableDeviceAction> = action as ScriptableDeviceAction;
+        if IsDefined(sa) {
+            return s"device::\(TDBID.ToStringDEBUG(sa.GetObjectActionID()))::\(GameInstance.GetTimeSystem(GetGameInstance()).GetGameTimeStamp())";
+        }
+        
+        return s"unknown::\(GameInstance.GetTimeSystem(GetGameInstance()).GetGameTimeStamp())";
     }
 }
 
