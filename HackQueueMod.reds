@@ -1,9 +1,11 @@
 // ============================================================================
-// SIMPLE QUEUE FIX - Use UI target data directly, skip complex helper
+// QUICKHACK QUEUE MOD - v1.63 SIMPLIFIED VERSION
+// Core issue: m_selectedData is null when ApplyQuickHack is called
+// Solution: Wrap OnAction to intercept UI_ApplyAndClose before selection issues
 // ============================================================================
 
 // ============================================================================
-// Core Queue Data Structure (Keep this - it works fine)
+// Core Queue Data Structure
 // ============================================================================
 class DeviceActionQueue {
     private let m_actionQueue: array<ref<DeviceAction>>;
@@ -46,7 +48,7 @@ class DeviceActionQueue {
 }
 
 // ============================================================================
-// Target Extensions (Keep these - they work)
+// Target Extensions
 // ============================================================================
 
 // ScriptedPuppet queue support
@@ -63,7 +65,7 @@ public func GetDeviceActionQueue() -> ref<DeviceActionQueue> {
 
 @addMethod(ScriptedPuppet)
 public func IsActionQueueEnabled() -> Bool {
-    return true; // Simple - always enabled for now
+    return true;
 }
 
 @addMethod(ScriptedPuppet)
@@ -96,38 +98,85 @@ public func IsActionQueueFull() -> Bool {
 }
 
 // ============================================================================
-// FIXED UI INTEGRATION - Use target data directly from UI
+// FIXED: Intercept UI Action Before Selection Issues Occur
 // ============================================================================
 
 @wrapMethod(QuickhacksListGameController)
-private func ApplyQuickHack() -> Bool {
-    LogChannel(n"DEBUG", "[QueueMod] *** ApplyQuickHack called ***");
+protected cb func OnAction(action: ListenerAction, consumer: ListenerActionConsumer) -> Bool {
+    let actionName: CName = ListenerAction.GetName(action);
+    let isMinigameActive: Bool = this.GetPlayerControlledObject().GetHudManager().IsHackingMinigameActive();
     
-    if !IsDefined(this.m_selectedData) || !IsDefined(this.m_selectedData.m_action) {
-        LogChannel(n"DEBUG", "[QueueMod] No selected data or action");
-        return wrappedMethod();
+    // Only handle UI_ApplyAndClose when conditions are right
+    if !isMinigameActive && !this.m_isUILocked && Equals(actionName, n"UI_ApplyAndClose") {
+        LogChannel(n"DEBUG", "[QueueMod] *** UI_ApplyAndClose action intercepted ***");
+        
+        // Check if we should attempt queueing before calling normal logic
+        if this.TryQueueCurrentAction() {
+            return true; // Action handled by queue system
+        }
+        
+        // Fall back to normal handling if queueing failed
+        LogChannel(n"DEBUG", "[QueueMod] Queue attempt failed, proceeding normally");
     }
     
-    // Check if we should queue this action
+    return wrappedMethod(action, consumer);
+}
+
+@addMethod(QuickhacksListGameController)
+private func TryQueueCurrentAction() -> Bool {
+    // Get currently selected quickhack using the proven v1.63 pattern
+    if !IsDefined(this.m_listController) {
+        LogChannel(n"DEBUG", "[QueueMod] No list controller");
+        return false;
+    }
+    
+    let selectedIndex: Int32 = this.m_listController.GetSelectedIndex();
+    if selectedIndex < 0 {
+        LogChannel(n"DEBUG", s"[QueueMod] Invalid selection index: \(selectedIndex)");
+        return false;
+    }
+    
+    // Use the exact same pattern as the working v1.63 code: ( ( QuickhacksListItemController )( m_listController.GetItemAt( index ).GetController() ) )
+    let quickhackController: QuickhacksListItemController = ( ( QuickhacksListItemController )( this.m_listController.GetItemAt( selectedIndex ).GetController() ) );
+    if !IsDefined(quickhackController) {
+        LogChannel(n"DEBUG", "[QueueMod] No quickhack controller");
+        return false;
+    }
+    
+    let currentData: ref<QuickhackData> = quickhackController.GetData() as QuickhackData;
+    if !IsDefined(currentData) || !IsDefined(currentData.m_action) {
+        LogChannel(n"DEBUG", "[QueueMod] No valid quickhack data at selection");
+        return false;
+    }
+    
+    LogChannel(n"DEBUG", s"[QueueMod] Found valid quickhack: \(currentData.m_title)");
+    
+    // Check if we have an active upload
     let hasActiveUpload: Bool = GameInstance.GetStatPoolsSystem(this.m_gameInstance).IsStatPoolAdded(Cast<StatsObjectID>(GameInstance.GetPlayerSystem(this.m_gameInstance).GetLocalPlayerMainGameObject().GetEntityID()), gamedataStatPoolType.QuickHackUpload);
     
     if !hasActiveUpload {
-        LogChannel(n"DEBUG", "[QueueMod] No active upload - executing normally");
-        return wrappedMethod();
+        LogChannel(n"DEBUG", "[QueueMod] No active upload - not queueing");
+        return false;
     }
     
-    // Get target directly from UI data - this is the key fix!
-    let targetID: EntityID = this.m_selectedData.m_actionOwner;
+    // Check if action is locked
+    if currentData.m_isLocked {
+        LogChannel(n"DEBUG", "[QueueMod] Action is locked - not queueing");
+        return false;
+    }
+    
+    // Get target ID from the quickhack data
+    let targetID: EntityID = currentData.m_actionOwner;
     if !EntityID.IsDefined(targetID) {
         LogChannel(n"DEBUG", "[QueueMod] No valid target ID");
-        return wrappedMethod();
+        return false;
     }
     
     // Find target object
     let targetObject: ref<GameObject> = GameInstance.FindEntityByID(this.m_gameInstance, targetID) as GameObject;
     if !IsDefined(targetObject) {
         LogChannel(n"DEBUG", "[QueueMod] Cannot find target object");
-        return wrappedMethod();
+        return false;
     }
     
     LogChannel(n"DEBUG", s"[QueueMod] Found target: \(targetObject.GetDisplayName())");
@@ -136,7 +185,7 @@ private func ApplyQuickHack() -> Bool {
     let queue: ref<DeviceActionQueue> = this.GetQueueFromTarget(targetObject);
     if !IsDefined(queue) {
         LogChannel(n"DEBUG", "[QueueMod] Target has no queue");
-        return wrappedMethod();
+        return false;
     }
     
     // Check if queue is full
@@ -151,22 +200,22 @@ private func ApplyQuickHack() -> Bool {
     }
     
     if queueFull {
-        LogChannel(n"DEBUG", "[QueueMod] Queue is full - executing normally");
-        return wrappedMethod();
+        LogChannel(n"DEBUG", "[QueueMod] Queue is full - not queueing");
+        return false;
     }
     
     // Queue the action!
-    let wasQueued: Bool = queue.PutActionInQueue(this.m_selectedData.m_action);
+    let wasQueued: Bool = queue.PutActionInQueue(currentData.m_action);
     if wasQueued {
         LogChannel(n"DEBUG", "[QueueMod] Successfully queued action!");
         
-        // Apply cooldown and refresh UI
-        this.ApplyCooldownForQueue();
+        // Apply cooldown and refresh UI  
+        this.ApplyCooldownForQueue(currentData);
         this.RefreshUIAfterQueue();
         return true;
     } else {
         LogChannel(n"DEBUG", "[QueueMod] Failed to queue action");
-        return wrappedMethod();
+        return false;
     }
 }
 
@@ -191,17 +240,17 @@ private func GetQueueFromTarget(target: ref<GameObject>) -> ref<DeviceActionQueu
 }
 
 @addMethod(QuickhacksListGameController)
-private func ApplyCooldownForQueue() -> Void {
-    if !IsDefined(this.m_selectedData) || this.m_selectedData.m_cooldown <= 0.0 {
+private func ApplyCooldownForQueue(quickhackData: ref<QuickhackData>) -> Void {
+    if !IsDefined(quickhackData) || quickhackData.m_cooldown <= 0.0 {
         return;
     }
     
     let playerSystem: ref<PlayerSystem> = GameInstance.GetPlayerSystem(this.m_gameInstance);
     let player: ref<PlayerPuppet> = playerSystem.GetLocalPlayerMainGameObject() as PlayerPuppet;
     
-    if IsDefined(player) && TDBID.IsValid(this.m_selectedData.m_cooldownTweak) {
-        StatusEffectHelper.ApplyStatusEffect(player, this.m_selectedData.m_cooldownTweak);
-        LogChannel(n"DEBUG", s"[QueueMod] Applied cooldown: \(this.m_selectedData.m_cooldown)s");
+    if IsDefined(player) && TDBID.IsValid(quickhackData.m_cooldownTweak) {
+        StatusEffectHelper.ApplyStatusEffect(player, quickhackData.m_cooldownTweak);
+        LogChannel(n"DEBUG", s"[QueueMod] Applied cooldown: \(quickhackData.m_cooldown)s");
         this.RegisterCooldownStatPoolUpdate();
     }
 }
