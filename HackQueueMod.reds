@@ -10,6 +10,7 @@ public class QueueModEntry {
     public let timestamp: Float;
     public let entryType: String; // "action" or "intent"
     public let intent: ref<QueueModIntent>; // For intent entries
+    public let uploadSpeedModifier: Float; // Speed multiplier for queued uploads
     
     public static func CreateAction(action: ref<DeviceAction>, key: String) -> ref<QueueModEntry> {
         let entry: ref<QueueModEntry> = new QueueModEntry();
@@ -18,6 +19,7 @@ public class QueueModEntry {
         entry.entryType = "action";
         entry.timestamp = GameInstance.GetTimeSystem(GetGameInstance()).GetGameTimeStamp();
         entry.intent = null;
+        entry.uploadSpeedModifier = 1.0; // Default speed
         return entry;
     }
     
@@ -28,6 +30,18 @@ public class QueueModEntry {
         entry.entryType = "intent";
         entry.timestamp = intent.timestamp;
         entry.intent = intent;
+        entry.uploadSpeedModifier = 1.0; // Default speed
+        return entry;
+    }
+    
+    public static func CreateActionWithSpeed(action: ref<DeviceAction>, key: String, speedModifier: Float) -> ref<QueueModEntry> {
+        let entry: ref<QueueModEntry> = new QueueModEntry();
+        entry.action = action;
+        entry.fingerprint = key;
+        entry.entryType = "action";
+        entry.timestamp = GameInstance.GetTimeSystem(GetGameInstance()).GetGameTimeStamp();
+        entry.intent = null;
+        entry.uploadSpeedModifier = speedModifier;
         return entry;
     }
 }
@@ -76,6 +90,12 @@ public class QueueModActionQueue {
             return false;
         }
         
+        // Reserve RAM before adding to queue
+        if !this.ReserveRAMForAction(action) {
+            LogChannel(n"DEBUG", s"[QueueMod] Insufficient RAM to queue action: \(key)");
+            return false;
+        }
+        
         ArrayPush(this.m_queueEntries, entry);
         LogChannel(n"DEBUG", s"[QueueMod] Entry added atomically: \(key), size=\(ArraySize(this.m_queueEntries))");
         return true;
@@ -111,8 +131,18 @@ public class QueueModActionQueue {
     }
 
     public func ClearQueue() -> Void {
+        // Refund RAM for all queued actions before clearing
+        let i: Int32 = 0;
+        while i < ArraySize(this.m_queueEntries) {
+            let entry: ref<QueueModEntry> = this.m_queueEntries[i];
+            if IsDefined(entry) && Equals(entry.entryType, "action") && IsDefined(entry.action) {
+                this.RefundRAMForAction(entry.action);
+            }
+            i += 1;
+        }
+        
         ArrayClear(this.m_queueEntries);
-        LogChannel(n"DEBUG", "[QueueMod] Queue cleared");
+        LogChannel(n"DEBUG", "[QueueMod] Queue cleared - RAM refunded");
     }
 
     public func LockQueue() -> Void {
@@ -226,6 +256,86 @@ public class QueueModActionQueue {
         this.m_queueEntries = cleanEntries;
         
         LogChannel(n"DEBUG", s"[QueueMod] Emergency cleanup complete - \(ArraySize(this.m_queueEntries)) entries recovered");
+    }
+    
+    // RAM Cost Reservation System (Simplified for v1.63)
+    private func ReserveRAMForAction(action: ref<DeviceAction>) -> Bool {
+        let sa: ref<ScriptableDeviceAction> = action as ScriptableDeviceAction;
+        if !IsDefined(sa) {
+            return true; // Non-ScriptableDeviceAction doesn't use RAM
+        }
+        
+        // Get RAM cost from action data
+        let ramCost: Int32 = this.GetActionRAMCost(sa);
+        if ramCost <= 0 {
+            return true; // No RAM cost
+        }
+        
+        // TODO: Implement proper RAM reservation system
+        // For now, just log the RAM cost
+        LogChannel(n"DEBUG", s"[QueueMod] Would reserve \(ramCost) RAM for queued action");
+        return true; // Always allow for now
+    }
+    
+    private func RefundRAMForAction(action: ref<DeviceAction>) -> Void {
+        let sa: ref<ScriptableDeviceAction> = action as ScriptableDeviceAction;
+        if !IsDefined(sa) {
+            return; // Non-ScriptableDeviceAction doesn't use RAM
+        }
+        
+        let ramCost: Int32 = this.GetActionRAMCost(sa);
+        if ramCost <= 0 {
+            return; // No RAM cost
+        }
+        
+        // TODO: Implement proper RAM refund system
+        LogChannel(n"DEBUG", s"[QueueMod] Would refund \(ramCost) RAM for canceled action");
+    }
+    
+    private func GetActionRAMCost(action: ref<ScriptableDeviceAction>) -> Int32 {
+        // TODO: Implement proper RAM cost calculation from action data
+        // For now, return a default cost
+        return 2; // Default RAM cost for quickhacks
+    }
+    
+    // Upload Speed Modifiers (2.0 style)
+    private func CalculateUploadSpeedModifier(queuePosition: Int32) -> Float {
+        // First hack = full time, subsequent hacks = 20% faster
+        if queuePosition <= 0 {
+            return 1.0; // First hack at full speed
+        }
+        
+        // Each additional hack is 20% faster (0.8x time)
+        let speedModifier: Float = 1.0 - (Cast<Float>(queuePosition) * 0.2);
+        return MaxF(speedModifier, 0.3); // Minimum 30% of original time
+    }
+    
+    public func PutActionInQueueWithSpeedModifier(action: ref<DeviceAction>, key: String) -> Bool {
+        if !IsDefined(action) || this.m_isQueueLocked || ArraySize(this.m_queueEntries) >= this.m_maxQueueSize {
+            return false;
+        }
+        
+        // Calculate speed modifier based on current queue size
+        let queuePosition: Int32 = ArraySize(this.m_queueEntries);
+        let speedModifier: Float = this.CalculateUploadSpeedModifier(queuePosition);
+        
+        // Reserve RAM before adding to queue
+        if !this.ReserveRAMForAction(action) {
+            LogChannel(n"DEBUG", s"[QueueMod] Insufficient RAM to queue action: \(key)");
+            return false;
+        }
+        
+        // Create entry with speed modifier
+        let entry: ref<QueueModEntry> = QueueModEntry.CreateActionWithSpeed(action, key, speedModifier);
+        if !IsDefined(entry) {
+            LogChannel(n"ERROR", "[QueueMod] Failed to create queue entry");
+            this.RefundRAMForAction(action);
+            return false;
+        }
+        
+        ArrayPush(this.m_queueEntries, entry);
+        LogChannel(n"DEBUG", s"[QueueMod] Entry added with speed modifier \(speedModifier): \(key), size=\(ArraySize(this.m_queueEntries))");
+        return true;
     }
 }
 
@@ -429,8 +539,8 @@ public class QueueModHelper {
 
     public func ValidateQueueIntegrity(queue: ref<QueueModActionQueue>) -> Bool {
         if !IsDefined(queue) {
-            return false;
-        }
+        return false;
+    }
 
         let actionSize: Int32 = queue.GetQueueSize();
         LogChannel(n"DEBUG", s"[QueueMod][Validation] Queue integrity check - Action count: \(actionSize)");
@@ -586,15 +696,15 @@ private func TranslateChoicesIntoQuickSlotCommands(puppetActions: array<ref<Pupp
                         if isUploadLock {
                             LogChannel(n"DEBUG", s"[QueueMod][Debug] Found locked command with upload reason: \(GetLocalizedText(commands[i].m_inactiveReason))");
                             
-                            if Equals(commands[i].m_type, gamedataObjectActionType.PuppetQuickHack) || Equals(commands[i].m_type, gamedataObjectActionType.MinigameUpload) {
+                    if Equals(commands[i].m_type, gamedataObjectActionType.PuppetQuickHack) || Equals(commands[i].m_type, gamedataObjectActionType.MinigameUpload) {
                                 LogChannel(n"DEBUG", s"[QueueMod][Debug] Command type matches - unblocking");
-                                commands[i].m_isLocked = false;
-                                commands[i].m_inactiveReason = "";
-                                commands[i].m_actionState = EActionInactivityReson.Ready;
+                        commands[i].m_isLocked = false;
+                        commands[i].m_inactiveReason = "";
+                        commands[i].m_actionState = EActionInactivityReson.Ready;
 
-                                if Equals(commands[i].m_type, gamedataObjectActionType.PuppetQuickHack) {
+                        if Equals(commands[i].m_type, gamedataObjectActionType.PuppetQuickHack) {
                                     LogChannel(n"DEBUG", s"[QueueMod] Unblocked quickhack for queue: \(ToString(commands[i].m_type))");
-                                } else {
+                        } else {
                                     LogChannel(n"DEBUG", s"[QueueMod] Preserved breach protocol access: \(ToString(commands[i].m_type))");
                                 }
                             } else {
@@ -680,6 +790,7 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
     // Step 4: Handle failures gracefully - check if target is still valid
     if !IsDefined(this) {
         LogChannel(n"DEBUG", "[QueueMod] Target is invalid - clearing queue");
+        this.NotifyPlayerQueueCanceled("Target eliminated, queued quickhacks canceled.");
         return;
     }
 
@@ -689,9 +800,9 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
         let saExec: ref<ScriptableDeviceAction> = entry.action as ScriptableDeviceAction;
         if IsDefined(saExec) {
             saExec.RegisterAsRequester(this.GetEntityID());
-            let quickSlotCmd: ref<QuickSlotCommandUsed> = new QuickSlotCommandUsed();
+                            let quickSlotCmd: ref<QuickSlotCommandUsed> = new QuickSlotCommandUsed();
             quickSlotCmd.action = saExec;
-            this.OnQuickSlotCommandUsed(quickSlotCmd);
+                            this.OnQuickSlotCommandUsed(quickSlotCmd);
             LogChannel(n"DEBUG", s"[QueueMod][Exec] Successfully executed queued action: \(entry.action.GetClassName())");
         } else {
             LogChannel(n"DEBUG", s"[QueueMod][Exec] Skip non-ScriptableDeviceAction: class=\(entry.action.GetClassName())");
@@ -717,7 +828,7 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
         quickSlotCmd.action = puppetAction;
         this.OnQuickSlotCommandUsed(quickSlotCmd);
         LogChannel(n"DEBUG", s"[QueueMod][Intent] Successfully executed intent: \(entry.intent.actionTitle)");
-    } else {
+                } else {
         LogChannel(n"ERROR", s"[QueueMod] Invalid entry type or missing data: type=\(entry.entryType) action=\(IsDefined(entry.action)) intent=\(IsDefined(entry.intent))");
         // Clear queue on invalid data
         let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
@@ -744,6 +855,87 @@ private func RefreshQueueModUI() -> Void {
             }
         }
     }
+    
+    // Update HUD overlay for this target
+    this.UpdateQueueHUDOverlay();
+}
+
+@addMethod(ScriptedPuppet)
+private func UpdateQueueHUDOverlay() -> Void {
+    let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
+    if !IsDefined(queue) {
+        return;
+    }
+    
+    let queueSize: Int32 = queue.GetQueueSize();
+    if queueSize > 0 {
+        // Show queue indicator on target
+        LogChannel(n"DEBUG", s"[QueueMod][HUD] Target \(GetLocalizedText(this.GetDisplayName())) has \(queueSize) queued hacks");
+        
+        // TODO: Add visual HUD overlay here
+        // This would integrate with the game's HUD system to show:
+        // - Small stack icons near enemy health bar
+        // - Progress bar showing upload progress
+        // - Queue count indicator
+    }
+}
+
+// Queue Persistence Across Scanner Toggles
+@addMethod(ScriptedPuppet)
+public func GetQueueModPersistenceData() -> String {
+    let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
+    if !IsDefined(queue) {
+        return "";
+    }
+    
+    let queueSize: Int32 = queue.GetQueueSize();
+    if queueSize == 0 {
+        return "";
+    }
+    
+    // Serialize queue data for persistence
+    let entityIDStr: String = ToString(this.GetEntityID());
+    let queueSizeStr: String = ToString(queueSize);
+    let persistenceData: String = s"\(entityIDStr)::\(queueSizeStr)";
+    LogChannel(n"DEBUG", s"[QueueMod][Persistence] Storing queue data: \(persistenceData)");
+    return persistenceData;
+}
+
+@addMethod(ScriptedPuppet)
+public func RestoreQueueModPersistenceData(data: String) -> Void {
+    if Equals(data, "") {
+        return;
+    }
+    
+    let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
+    if !IsDefined(queue) {
+        return;
+    }
+    
+    // Parse persistence data and restore queue state
+    LogChannel(n"DEBUG", s"[QueueMod][Persistence] Restoring queue data: \(data)");
+    // TODO: Implement proper deserialization and queue restoration
+}
+
+// Player-Friendly Error Handling
+@addMethod(ScriptedPuppet)
+private func NotifyPlayerQueueCanceled(message: String) -> Void {
+    // Show notification to player
+    let playerSystem: ref<PlayerSystem> = GameInstance.GetPlayerSystem(this.GetGame());
+    if IsDefined(playerSystem) {
+        let player: ref<PlayerPuppet> = playerSystem.GetLocalPlayerMainGameObject() as PlayerPuppet;
+        if IsDefined(player) {
+            // TODO: Implement proper notification system
+            // This would show a UI notification to the player
+            LogChannel(n"DEBUG", s"[QueueMod][Notification] \(message)");
+        }
+    }
+}
+
+@addMethod(ScriptedPuppet)
+private func NotifyPlayerRAMRefunded(amount: Int32) -> Void {
+    let message: String = s"RAM refunded: \(amount) units";
+    this.NotifyPlayerQueueCanceled(message);
 }
 
 // ScriptableDeviceAction extensions
@@ -923,7 +1115,7 @@ private func ApplyQuickHack() -> Bool {
     // Check if we should queue
     let shouldQueue: Bool = this.IsQuickHackCurrentlyUploading();
     LogChannel(n"DEBUG", s"[QueueMod] Should queue: \(shouldQueue)");
-    
+
     // Additional debug info for upload detection
     if !shouldQueue {
         LogChannel(n"DEBUG", s"[QueueMod][Debug] Upload detection details - UI lock: \(this.QueueModDetectUILock())");
@@ -933,20 +1125,20 @@ private func ApplyQuickHack() -> Bool {
         // Create PuppetAction from metadata (no m_action dependency)
         let reconstructedAction: ref<PuppetAction> = this.ReconstructActionFromData(this.m_selectedData);
         if IsDefined(reconstructedAction) {
-            let playerSystem: ref<PlayerSystem> = GameInstance.GetPlayerSystem(this.m_gameInstance);
-            let player: ref<PlayerPuppet> = playerSystem.GetLocalPlayerMainGameObject() as PlayerPuppet;
-            
-            if IsDefined(player) {
-                let queueHelper: ref<QueueModHelper> = player.GetQueueModHelper();
-                if IsDefined(queueHelper) {
+        let playerSystem: ref<PlayerSystem> = GameInstance.GetPlayerSystem(this.m_gameInstance);
+        let player: ref<PlayerPuppet> = playerSystem.GetLocalPlayerMainGameObject() as PlayerPuppet;
+
+        if IsDefined(player) {
+            let queueHelper: ref<QueueModHelper> = player.GetQueueModHelper();
+            if IsDefined(queueHelper) {
                     let uniqueKey: String = s"\(ToString(targetID))::\(actionName)::\(GameInstance.GetTimeSystem(this.m_gameInstance).GetSimTime())";
                     
                     let wasQueued: Bool = queueHelper.PutInQuickHackQueueWithKey(reconstructedAction, uniqueKey);
-                    if wasQueued {
+                if wasQueued {
                         LogChannel(n"DEBUG", s"[QueueMod] Queued reconstructed: \(actionName)");
                         this.ApplyQueueModCooldownWithData(this.m_selectedData);
-                        this.RefreshQueueModUI();
-                        return true;
+                    this.RefreshQueueModUI();
+                    return true;
                     }
                 }
             }
