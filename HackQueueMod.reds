@@ -579,9 +579,12 @@ private func TranslateChoicesIntoQuickSlotCommands(puppetActions: array<ref<Pupp
                         LogChannel(n"DEBUG", s"[QueueMod][Debug] Found locked command - checking reason");
                         
                         // Try multiple possible lock reasons
-                        let isUploadLock: Bool = Equals(ToString(commands[i].m_inactiveReason), "LocKey#27398") || Equals(ToString(commands[i].m_inactiveReason), "LocKey#40765");
+                        let isUploadLock: Bool = Equals(ToString(commands[i].m_inactiveReason), "LocKey#27398") || 
+                                                 Equals(ToString(commands[i].m_inactiveReason), "LocKey#40765") ||
+                                                 Equals(ToString(commands[i].m_inactiveReason), "LocKey#7020") ||
+                                                 Equals(ToString(commands[i].m_inactiveReason), "LocKey#7019");
                         if isUploadLock {
-                            LogChannel(n"DEBUG", s"[QueueMod][Debug] Found locked command with upload reason");
+                            LogChannel(n"DEBUG", s"[QueueMod][Debug] Found locked command with upload reason: \(ToString(commands[i].m_inactiveReason))");
                             
                             if Equals(commands[i].m_type, gamedataObjectActionType.PuppetQuickHack) || Equals(commands[i].m_type, gamedataObjectActionType.MinigameUpload) {
                                 LogChannel(n"DEBUG", s"[QueueMod][Debug] Command type matches - unblocking");
@@ -611,7 +614,12 @@ private func TranslateChoicesIntoQuickSlotCommands(puppetActions: array<ref<Pupp
             let i2: Int32 = 0;
             let commandsSize2: Int32 = ArraySize(commands);
             while i2 < commandsSize2 {
-                if IsDefined(commands[i2]) && commands[i2].m_isLocked && (Equals(ToString(commands[i2].m_inactiveReason), "LocKey#27398") || Equals(ToString(commands[i2].m_inactiveReason), "LocKey#40765")) && Equals(commands[i2].m_type, gamedataObjectActionType.MinigameUpload) {
+                if IsDefined(commands[i2]) && commands[i2].m_isLocked && 
+                   (Equals(ToString(commands[i2].m_inactiveReason), "LocKey#27398") || 
+                    Equals(ToString(commands[i2].m_inactiveReason), "LocKey#40765") ||
+                    Equals(ToString(commands[i2].m_inactiveReason), "LocKey#7020") ||
+                    Equals(ToString(commands[i2].m_inactiveReason), "LocKey#7019")) && 
+                   Equals(commands[i2].m_type, gamedataObjectActionType.MinigameUpload) {
                     commands[i2].m_isLocked = false;
                     commands[i2].m_inactiveReason = "";
                     commands[i2].m_actionState = EActionInactivityReson.Ready;
@@ -779,7 +787,11 @@ private func QueueModDetectUILock() -> Bool {
     let i: Int32 = 0;
     while i < ArraySize(this.m_data) {
         let entry: ref<QuickhackData> = this.m_data[i];
-        if IsDefined(entry) && entry.m_isLocked && (Equals(ToString(entry.m_inactiveReason), "LocKey#27398") || Equals(ToString(entry.m_inactiveReason), "LocKey#40765")) {
+        if IsDefined(entry) && entry.m_isLocked && 
+           (Equals(ToString(entry.m_inactiveReason), "LocKey#27398") || 
+            Equals(ToString(entry.m_inactiveReason), "LocKey#40765") ||
+            Equals(ToString(entry.m_inactiveReason), "LocKey#7020") ||
+            Equals(ToString(entry.m_inactiveReason), "LocKey#7019")) {
             return true;
         }
         i += 1;
