@@ -45,26 +45,27 @@
 // Using integer constants for v1.63 compatibility (fixed syntax)
 
 // Simplified queue entry (removed intent system and speed modifiers)
-class QueueModEntry {
+public class QueueModEntry {
     public let action: ref<DeviceAction>;
     public let fingerprint: String;
     public let timestamp: Float;
     public let entryType: Int32;
     public let ramCost: Int32; // Track actual RAM cost for proper refunds
-    
-    public func CreateAction(action: ref<DeviceAction>, key: String, cost: Int32) -> ref<QueueModEntry> {
-        let entry: ref<QueueModEntry> = new QueueModEntry();
-        entry.action = action;
-        entry.fingerprint = key;
-        entry.entryType = 0;
-        entry.timestamp = GameInstance.GetTimeSystem(GetGameInstance()).GetGameTimeStamp();
-        entry.ramCost = cost;
-        return entry;
-    }
+}
+
+// Function moved outside class for v1.63 compatibility
+public func CreateQueueModEntry(action: ref<DeviceAction>, key: String, cost: Int32) -> ref<QueueModEntry> {
+    let entry: ref<QueueModEntry> = new QueueModEntry();
+    entry.action = action;
+    entry.fingerprint = key;
+    entry.entryType = 0;
+    entry.timestamp = GameInstance.GetTimeSystem(GetGameInstance()).GetGameTimeStamp();
+    entry.ramCost = cost;
+    return entry;
 }
 
 // UPDATED: Single array replaces three parallel arrays
-class QueueModActionQueue {
+public class QueueModActionQueue {
     private let m_queueEntries: array<ref<QueueModEntry>>; // SINGLE SOURCE
     private let m_isQueueLocked: Bool;
     private let m_maxQueueSize: Int32;
@@ -132,8 +133,7 @@ class QueueModActionQueue {
             ramCost = pa.GetCost();
         }
         
-        let entryCreator: ref<QueueModEntry> = new QueueModEntry();
-        let entry: ref<QueueModEntry> = entryCreator.CreateAction(action, key, ramCost);
+        let entry: ref<QueueModEntry> = CreateQueueModEntry(action, key, ramCost);
         if !IsDefined(entry) {
             LogChannel(n"ERROR", "[QueueMod] Failed to create queue entry");
             return false;
@@ -351,7 +351,7 @@ class QueueModActionQueue {
 // Note: QueueModIntent class removed - redundant with queued actions
 
 // Queue Event for State Synchronization
-class QueueModEvent extends Event {
+public class QueueModEvent extends Event {
     public let eventType: CName;
     public let quickhackData: ref<QuickhackData>;
     public let timestamp: Float;
@@ -371,7 +371,7 @@ class QueueModEvent extends Event {
 // Using simplified approach without delayed callback
 
 // Core helper with v1.63-compatible patterns
-class QueueModHelper {
+public class QueueModHelper {
 
     public func PutInQuickHackQueue(action: ref<DeviceAction>) -> Bool {
         LogChannel(n"DEBUG", "[QueueMod] *** QUEUE SYSTEM ACTIVATED ***");
@@ -786,46 +786,45 @@ private func TranslateChoicesIntoQuickSlotCommands(puppetActions: array<ref<Pupp
 
 @wrapMethod(ScriptedPuppet)
 protected cb func OnUploadProgressStateChanged(evt: ref<UploadProgramProgressEvent>) -> Bool {
+    // Let vanilla process first (can't prevent it)
     let result: Bool = wrappedMethod(evt);
 
-    // Note: Flash reset logic removed - using simple GameObject effects instead of PSM events
-
-    if Equals(evt.progressBarContext, EProgressBarContext.QuickHack) {
-        if Equals(evt.progressBarType, EProgressBarType.UPLOAD) {
-            if Equals(evt.state, EUploadProgramState.COMPLETED) {
-                // PHASE 1: Check if target is dead before processing queue
-                if this.IsDead() || StatusEffectSystem.ObjectHasStatusEffectWithTag(this, n"Dead") {
-                    let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
-                    if IsDefined(queue) { 
-                        queue.ClearQueue(); 
-                    }
-                    LogChannel(n"DEBUG", "[QueueMod] Target dead during upload - queue cleared");
-                    return result;
-                }
-                
-                let sizeBefore: Int32 = this.GetQueueModActionQueue().GetQueueSize();
-                LogChannel(n"DEBUG", s"[QueueMod][Exec] Upload complete for NPC=\(GetLocalizedText(this.GetDisplayName())) queueSizeBefore=\(sizeBefore)");
-
-                // Check THIS puppet's queue for intents and actions
-                let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
-                if IsDefined(queue) {
-                    // FIX 4: Validate before processing - halt execution if validation fails
-                    if !queue.ValidateQueueIntegrity() {
-                        LogChannel(n"ERROR", "[QueueMod] Queue integrity failed - halting execution and clearing queue");
-                        queue.ClearQueue(); // Clear corrupted queue
-                        return result;
-                    }
-                    
-                    if queue.GetQueueSize() > 0 {
-                        let entry: ref<QueueModEntry> = queue.PopNextEntry();
-                        if IsDefined(entry) {
-                            this.ExecuteQueuedEntry(entry);
-                        }
-                    } else {
-                        LogChannel(n"DEBUG", "[QueueMod] No queued entries to execute");
-                    }
-                }
+    // Only check our queue processing
+    if Equals(evt.progressBarContext, EProgressBarContext.QuickHack) && 
+       Equals(evt.progressBarType, EProgressBarType.UPLOAD) && 
+       Equals(evt.state, EUploadProgramState.COMPLETED) {
+        
+        // Check death NOW before processing OUR queue
+        if this.IsDead() || 
+           StatusEffectSystem.ObjectHasStatusEffectWithTag(this, n"Dead") ||
+           StatusEffectSystem.ObjectHasStatusEffectWithTag(this, n"Unconscious") {
+            
+            // Clear our queue
+            let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
+            if IsDefined(queue) && queue.GetQueueSize() > 0 {
+                queue.ClearQueue();
+                LogChannel(n"DEBUG", "[QueueMod] Target dead - queue cleared, vanilla hack may still apply");
             }
+            return result;
+        }
+        
+        // Process queue only if alive
+        let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
+        if IsDefined(queue) && queue.GetQueueSize() > 0 {
+            // FIX 4: Validate before processing - halt execution if validation fails
+            if !queue.ValidateQueueIntegrity() {
+                LogChannel(n"ERROR", "[QueueMod] Queue integrity failed - halting execution and clearing queue");
+                queue.ClearQueue(); // Clear corrupted queue
+                return result;
+            }
+            
+            let entry: ref<QueueModEntry> = queue.PopNextEntry();
+            if IsDefined(entry) {
+                LogChannel(n"DEBUG", s"[QueueMod][Exec] Upload complete for NPC=\(GetLocalizedText(this.GetDisplayName())) processing queue");
+                this.ExecuteQueuedEntry(entry);
+            }
+        } else {
+            LogChannel(n"DEBUG", "[QueueMod] No queued entries to execute");
         }
     }
 
