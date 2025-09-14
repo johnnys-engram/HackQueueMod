@@ -54,13 +54,17 @@ public func IsQueueModFull() -> Bool {
 private func TranslateChoicesIntoQuickSlotCommands(puppetActions: array<ref<PuppetAction>>, out commands: array<ref<QuickhackData>>) -> Void {
     let isOngoingUpload: Bool = GameInstance.GetStatPoolsSystem(this.GetGame()).IsStatPoolAdded(Cast<StatsObjectID>(this.GetEntityID()), gamedataStatPoolType.QuickHackUpload);
     let hasQueued: Bool = IsDefined(this.GetQueueModActionQueue()) && this.GetQueueModActionQueue().GetQueueSize() > 0;
+    
+    // ✅ STATE DETECTION FIX: Enhanced upload detection for timing gaps
+    let isInUploadState: Bool = isOngoingUpload || hasQueued;
+    let uploadReason: String = isOngoingUpload ? "statpool-upload" : (hasQueued ? "queue-present" : "none");
 
     // Call vanilla first for normal v1.63 behavior
     wrappedMethod(puppetActions, commands);
 
     // Only intervene when there's an active upload
-    QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod][Debug] Upload check: isOngoingUpload=\(isOngoingUpload)");
-    if isOngoingUpload || hasQueued {
+    QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod][Debug] Upload check: isOngoingUpload=\(isOngoingUpload), hasQueued=\(hasQueued), reason=\(uploadReason)");
+    if isInUploadState {
         let queueEnabled: Bool = this.IsQueueModEnabled();
         let queueFull: Bool = this.IsQueueModFull();
 
@@ -94,21 +98,20 @@ private func TranslateChoicesIntoQuickSlotCommands(puppetActions: array<ref<Pupp
                         let isRamLock: Bool = StrContains(reasonStr, "ram") || Equals(reasonStr, "LocKey#27400");  // RAM insufficient
                         
                         if isUploadOrCooldown && !isRamLock {
-                            QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod][Unblock] Unlocking non-RAM lock: \(reasonStr)");
+                            QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod][Unblock] Checking command type: \(ToString(commands[i].m_type))");
                             
-                            if Equals(commands[i].m_type, gamedataObjectActionType.PuppetQuickHack) || Equals(commands[i].m_type, gamedataObjectActionType.MinigameUpload) {
-                                QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod][Debug] Command type matches - unblocking");
+                            // STRICT FILTER: Only allow PuppetQuickHack unlocking
+                            if Equals(commands[i].m_type, gamedataObjectActionType.PuppetQuickHack) {
+                                QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod][Unblock] Unlocking PuppetQuickHack: \(reasonStr)");
                                 commands[i].m_isLocked = false;
                                 commands[i].m_inactiveReason = "";
                                 commands[i].m_actionState = EActionInactivityReson.Ready;
-
-                                if Equals(commands[i].m_type, gamedataObjectActionType.PuppetQuickHack) {
-                                    QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod] Unblocked quickhack for queue: \(ToString(commands[i].m_type))");
-                                } else {
-                                    QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod] Preserved breach protocol access: \(ToString(commands[i].m_type))");
-                                }
+                            } else if Equals(commands[i].m_type, gamedataObjectActionType.MinigameUpload) {
+                                QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod][Block] Preserving MinigameUpload lock: \(reasonStr)");
+                                // CRITICAL: Do NOT unlock MinigameUpload - leave it locked
+                                // Breach protocol should remain blocked during quickhack uploads
                             } else {
-                                QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod][Debug] Command type does not match - skipping");
+                                QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod][Skip] Unknown action type: \(ToString(commands[i].m_type))");
                             }
                         } else if isRamLock {
                             QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod][Unblock] Skipping RAM lock: \(reasonStr)");
@@ -119,27 +122,27 @@ private func TranslateChoicesIntoQuickSlotCommands(puppetActions: array<ref<Pupp
                 }
                 i += 1;
             }
-        } else {
-            // Preserve breach protocol even if queue disabled/full
-            QueueModLog(n"DEBUG", n"QUEUE", "Queue full/disabled - preserving breach protocol only");
-
-            let i2: Int32 = 0;
-            let commandsSize2: Int32 = ArraySize(commands);
-            while i2 < commandsSize2 {
-                if IsDefined(commands[i2]) && commands[i2].m_isLocked && 
-                   (Equals(ToString(commands[i2].m_inactiveReason), "LocKey#27398") || 
-                    Equals(ToString(commands[i2].m_inactiveReason), "LocKey#40765") ||
-                    Equals(ToString(commands[i2].m_inactiveReason), "LocKey#7020") ||
-                    Equals(ToString(commands[i2].m_inactiveReason), "LocKey#7019")) && 
-                   !StrContains(ToString(commands[i2].m_inactiveReason), "ram") &&  // PHASE 2: Skip RAM locks
-                   Equals(commands[i2].m_type, gamedataObjectActionType.MinigameUpload) {
-                    commands[i2].m_isLocked = false;
-                    commands[i2].m_inactiveReason = "";
-                    commands[i2].m_actionState = EActionInactivityReson.Ready;
-                    QueueModLog(n"DEBUG", n"QUEUE", "Preserved breach protocol (queue full)");
+            
+            // ✅ BREACH VALIDATION: Verify breach protocol stays blocked
+            QueueModLog(n"DEBUG", n"EVENTS", "[BREACH-VALIDATION] Scanning for improperly unlocked MinigameUpload...");
+            let breachProtocolCount: Int32 = 0;
+            let unlockedBreachCount: Int32 = 0;
+            let j: Int32 = 0;
+            while j < ArraySize(commands) {
+                if IsDefined(commands[j]) && Equals(commands[j].m_type, gamedataObjectActionType.MinigameUpload) {
+                    breachProtocolCount += 1;
+                    if !commands[j].m_isLocked {
+                        unlockedBreachCount += 1;
+                        QueueModLog(n"ERROR", n"EVENTS", "[BREACH-BUG] ❌ MinigameUpload incorrectly unlocked!");
+                    }
                 }
-                i2 += 1;
+                j += 1;
             }
+            QueueModLog(n"DEBUG", n"EVENTS", s"[BREACH-VALIDATION] ✅ Breach protocols: \(breachProtocolCount), Unlocked: \(unlockedBreachCount)");
+            
+        } else {
+            // Queue full/disabled - no unblocking needed since breach protocol is already preserved by main logic
+            QueueModLog(n"DEBUG", n"QUEUE", "Queue full/disabled - breach protocol already preserved by main unblocking logic");
         }
     }
 }

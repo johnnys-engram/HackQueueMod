@@ -37,7 +37,7 @@ public func QueueModLog(level: CName, category: CName, message: String) -> Void 
     let DEBUG_QUICKHACK: Bool = false;   // Quickhack activation/execution
     let DEBUG_UI: Bool = false;          // UI operations
     let DEBUG_QUEUE: Bool = true;       // Queue operations
-    let DEBUG_EVENTS: Bool = false;      // Event handling
+    let DEBUG_EVENTS: Bool = true;      // Event handling
     let DEBUG_TEST: Bool = true;         // Smoke test and validation output
     let DEBUG_CATALOG: Bool = false;      // ⭐ ADD THIS LINE
     
