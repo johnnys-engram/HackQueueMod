@@ -113,7 +113,8 @@ public class CatalogSmokeTest {
         QueueModTestLog(n"DEBUG", "[Test 2] === DISPLAY NAME VALIDATION ===");
         let displayNameIssues: Int32 = 0;
         let localizedNames: Int32 = 0;
-        let fallbackNames: Int32 = 0;
+        let friendlyFallbackNames: Int32 = 0;
+        let technicalFallbackNames: Int32 = 0;
         let k: Int32 = 0;
         while k < ArraySize(allHacks) {
             let entry: ref<QuickhackCatalogEntry> = allHacks[k];
@@ -122,19 +123,24 @@ public class CatalogSmokeTest {
                     QueueModTestLog(n"ERROR", s"  [ISSUE] Entry \(k+1) has invalid display name: '\(entry.displayName)'");
                     displayNameIssues += 1;
                 } else if StrContains(entry.displayName, "Hack") && !StrContains(entry.displayName, " ") {
-                    // Likely a fallback name (e.g., "LocomotionMalfunctionHack")
-                    fallbackNames += 1;
-                    QueueModTestLog(n"WARN", s"  [FALLBACK] Entry \(k+1) using fallback name: '\(entry.displayName)'");
+                    // Technical fallback name (e.g., "LocomotionMalfunctionHack")
+                    technicalFallbackNames += 1;
+                    QueueModTestLog(n"WARN", s"  [TECHNICAL] Entry \(k+1) using technical fallback: '\(entry.displayName)'");
+                } else if StrContains(entry.displayName, " ") || Equals(entry.displayName, "Ping") || Equals(entry.displayName, "Overheat") {
+                    // Friendly fallback name (e.g., "Cripple Movement", "Reboot Optics")
+                    friendlyFallbackNames += 1;
+                    QueueModTestLog(n"DEBUG", s"  [FRIENDLY] Entry \(k+1) using friendly fallback: '\(entry.displayName)'");
                 } else {
-                    // Likely a proper localized name (e.g., "Cripple Movement")
+                    // Likely a proper localized name
                     localizedNames += 1;
+                    QueueModTestLog(n"DEBUG", s"  [LOCALIZED] Entry \(k+1) using localized name: '\(entry.displayName)'");
                 }
             }
             k += 1;
         }
         
         if displayNameIssues == 0 {
-            QueueModTestLog(n"DEBUG", s"  [PASS] All display names are valid - \(localizedNames) localized, \(fallbackNames) fallback");
+            QueueModTestLog(n"DEBUG", s"  [PASS] All display names are valid - \(localizedNames) localized, \(friendlyFallbackNames) friendly fallback, \(technicalFallbackNames) technical fallback");
         } else {
             QueueModTestLog(n"ERROR", s"  [FAIL] \(displayNameIssues) entries have invalid display names");
         }

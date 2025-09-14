@@ -43,24 +43,23 @@ public class QuickhackCatalogEntry {
         this.actionRecord = record;
         this.actionID = record.GetID();
         
-        // Debug localization key before conversion
-        let captionValue: CName = record.ObjectActionUI().Caption();
-        QueueModLog(n"DEBUG", n"CATALOG", s"[Debug] Caption value: \(ToString(captionValue))");
+        // v1.63 COMPATIBLE localization pattern (from project evidence)
+        this.displayName = LocKeyToString(record.ObjectActionUI().Caption());
         
-        this.displayName = LocKeyToString(captionValue);
-        
-        // Fallback display name system for v1.63 localization edge cases
+        // Enhanced fallback for v1.63 edge cases
         if Equals(this.displayName, "") || StrContains(this.displayName, "LocKey") {
-            // Fallback to TweakDBID string for debugging
-            this.displayName = TDBID.ToStringDEBUG(this.actionID);
-            // Extract readable part (e.g., "QuickHack.OverheatHack" -> "OverheatHack")
-            if StrContains(this.displayName, ".") {
-                let parts: array<String> = StrSplit(this.displayName, ".");
-                if ArraySize(parts) > 1 {
-                    this.displayName = parts[ArraySize(parts) - 1];
-                }
+            // Try alternative localization approach
+            let captionStr: String = ToString(record.ObjectActionUI().Caption());
+            if NotEquals(captionStr, "") && NotEquals(captionStr, "None") {
+                this.displayName = GetLocalizedText(captionStr);
             }
-            QueueModLog(n"DEBUG", n"CATALOG", s"[Catalog] Using fallback display name: \(this.displayName)");
+            
+            // If still empty, use enhanced fallback with friendly names
+            if Equals(this.displayName, "") || StrContains(this.displayName, "LocKey") {
+                this.displayName = this.CreateFriendlyName(this.actionID);
+            }
+            
+            QueueModLog(n"DEBUG", n"CATALOG", s"[Catalog] Using enhanced fallback: \(this.displayName)");
         } else {
             QueueModLog(n"DEBUG", n"CATALOG", s"[Catalog] Localized display name: \(this.displayName)");
         }
@@ -119,6 +118,68 @@ public class QuickhackCatalogEntry {
             return 100; // Lower priority - powerful but should go last
         } else {
             return 150; // Default priority
+        }
+    }
+    
+    // Enhanced fallback method for creating friendly display names
+    private func CreateFriendlyName(actionID: TweakDBID) -> String {
+        let idStr: String = TDBID.ToStringDEBUG(actionID);
+        
+        // Extract the hack name part (e.g., "QuickHack.OverheatHack" -> "OverheatHack")
+        let hackName: String = idStr;
+        if StrContains(idStr, ".") {
+            let parts: array<String> = StrSplit(idStr, ".");
+            if ArraySize(parts) > 1 {
+                hackName = parts[ArraySize(parts) - 1];
+            }
+        }
+        
+        // Map technical names to friendly display names
+        if StrContains(hackName, "BlindLvl2Hack") || StrContains(hackName, "BlindHack") {
+            return "Reboot Optics";
+        } else if StrContains(hackName, "LocomotionMalfunctionHack") {
+            return "Cripple Movement";
+        } else if StrContains(hackName, "OverheatHack") {
+            return "Overheat";
+        } else if StrContains(hackName, "ShortCircuitHack") {
+            return "Short Circuit";
+        } else if StrContains(hackName, "SynapseBurnoutHack") {
+            return "Synapse Burnout";
+        } else if StrContains(hackName, "WeaponGlitchHack") {
+            return "Weapon Glitch";
+        } else if StrContains(hackName, "DisableCyberwareHack") {
+            return "Disable Cyberware";
+        } else if StrContains(hackName, "MemoryWipeHack") {
+            return "Memory Wipe";
+        } else if StrContains(hackName, "PingHack") {
+            return "Ping";
+        } else if StrContains(hackName, "WhistleHack") {
+            return "Whistle";
+        } else if StrContains(hackName, "DistractEnemiesHack") {
+            return "Distract Enemies";
+        } else if StrContains(hackName, "CommsNoiseHack") {
+            return "Comms Noise";
+        } else if StrContains(hackName, "SuicideHack") {
+            return "Suicide";
+        } else if StrContains(hackName, "SystemCollapseHack") {
+            return "System Collapse";
+        } else if StrContains(hackName, "MadnessHack") {
+            return "Madness";
+        } else if StrContains(hackName, "TakeControlHack") {
+            return "Take Control";
+        } else if StrContains(hackName, "ForceBrakesHack") {
+            return "Force Brakes";
+        } else {
+            // Generic fallback - clean up the technical name
+            let cleanName: String = StrReplace(hackName, "Hack", "");
+            cleanName = StrReplace(cleanName, "Lvl2", "");
+            cleanName = StrReplace(cleanName, "Lvl3", "");
+            cleanName = StrReplace(cleanName, "Lvl4", "");
+            cleanName = StrReplace(cleanName, "Lvl5", "");
+            
+            // Simple fallback - just return the cleaned name
+            // v1.63 doesn't have reliable string manipulation functions
+            return cleanName;
         }
     }
 }

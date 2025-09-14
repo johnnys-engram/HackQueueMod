@@ -32,7 +32,7 @@ module JE_HackQueueMod.Logging
 // MIGRATION PHASE 1: Now active - originals removed from main file
 public func QueueModLog(level: CName, category: CName, message: String) -> Void {
     // Development debug flags - set to false for production builds
-    let DEBUG_QUEUE_MOD: Bool = false;
+    let DEBUG_QUEUE_MOD: Bool = true;    // Master debug switch - set to false for production
     let DEBUG_RAM: Bool = true;          // RAM operations
     let DEBUG_QUICKHACK: Bool = false;    // Quickhack activation/execution
     let DEBUG_UI: Bool = false;          // UI operations
