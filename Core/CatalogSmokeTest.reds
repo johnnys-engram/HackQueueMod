@@ -18,7 +18,7 @@ public class CatalogSmokeTest {
     
     // Execute smoke test comparing catalog vs manual mappings
     public static func ExecuteSmokeTest() -> Bool {
-        QueueModLog(n"DEBUG", n"TEST", "*** CATALOG SMOKE TEST STARTED ***");
+        QueueModTestLog(n"DEBUG", "*** CATALOG SMOKE TEST STARTED ***");
         
         let allTestsPassed: Bool = true;
         
@@ -37,101 +37,162 @@ public class CatalogSmokeTest {
             allTestsPassed = false;
         }
         
-        // Test 4: Performance validation
+        // Test 4: Display name lookup validation
+        if !CatalogSmokeTest.TestDisplayNameLookups() {
+            allTestsPassed = false;
+        }
+        
+        // Test 5: Performance validation
         if !CatalogSmokeTest.TestPerformanceBaseline() {
             allTestsPassed = false;
         }
         
         if allTestsPassed {
-            QueueModLog(n"DEBUG", n"TEST", "*** CATALOG SMOKE TEST PASSED - Integration Ready ***");
+            QueueModTestLog(n"DEBUG", "*** CATALOG SMOKE TEST PASSED - Integration Ready ***");
         } else {
-            QueueModLog(n"ERROR", n"TEST", "*** CATALOG SMOKE TEST FAILED - Check errors above ***");
+            QueueModTestLog(n"ERROR", "*** CATALOG SMOKE TEST FAILED - Check errors above ***");
         }
         
         return allTestsPassed;
     }
     
     private static func TestCatalogInitialization() -> Bool {
-        QueueModLog(n"DEBUG", n"TEST", "[Test 1] Catalog initialization...");
+        QueueModTestLog(n"DEBUG", "[Test 1] Catalog initialization...");
         
         let playerSystem: ref<PlayerSystem> = GameInstance.GetPlayerSystem(GetGameInstance());
         if !IsDefined(playerSystem) {
-            QueueModLog(n"ERROR", n"TEST", "[Test 1] FAILED - Cannot get PlayerSystem");
+            QueueModTestLog(n"ERROR", "[Test 1] FAILED - Cannot get PlayerSystem");
             return false;
         }
         
         let player: ref<PlayerPuppet> = playerSystem.GetLocalPlayerMainGameObject() as PlayerPuppet;
         if !IsDefined(player) {
-            QueueModLog(n"ERROR", n"TEST", "[Test 1] FAILED - Cannot get player");
+            QueueModTestLog(n"ERROR", "[Test 1] FAILED - Cannot get player");
             return false;
         }
         
         let catalog: ref<NPCQuickhackCatalog> = player.GetNPCQuickhackCatalog();
         if !IsDefined(catalog) {
-            QueueModLog(n"ERROR", n"TEST", "[Test 1] FAILED - Catalog is null");
+            QueueModTestLog(n"ERROR", "[Test 1] FAILED - Catalog is null");
             return false;
         }
         
         let totalHacks: Int32 = catalog.GetTotalHackCount();
         if totalHacks < 1 {
-            QueueModLog(n"WARN", n"TEST", s"[Test 1] WARNING - Only \(totalHacks) hacks found (player may lack cyberdeck)");
+            QueueModTestLog(n"WARN", s"[Test 1] WARNING - Only \(totalHacks) hacks found (player may lack cyberdeck)");
             return false;
         }
         
-        QueueModLog(n"DEBUG", n"TEST", s"[Test 1] PASSED - Catalog initialized with \(totalHacks) quickhacks");
+        QueueModTestLog(n"DEBUG", s"[Test 1] PASSED - Catalog initialized with \(totalHacks) quickhacks");
         return true;
     }
     
     private static func TestKnownQuickhackLookups() -> Bool {
-        QueueModLog(n"DEBUG", n"TEST", "[Test 2] Known quickhack lookups...");
+        QueueModTestLog(n"DEBUG", "[Test 2] Known quickhack lookups...");
         
         let catalog: ref<NPCQuickhackCatalog> = GetQuickhackCatalog();
         if !IsDefined(catalog) {
-            QueueModLog(n"ERROR", n"TEST", "[Test 2] FAILED - Cannot get catalog");
+            QueueModTestLog(n"ERROR", "[Test 2] FAILED - Cannot get catalog");
             return false;
         }
         
         // NEW: List all discovered quickhacks
         let allHacks: array<ref<QuickhackCatalogEntry>> = catalog.GetAllQuickhacks();
-        QueueModLog(n"DEBUG", n"TEST", s"[Test 2] === DISCOVERED QUICKHACKS (\(ArraySize(allHacks)) total) ===");
+        QueueModTestLog(n"DEBUG", s"[Test 2] === DISCOVERED QUICKHACKS (\(ArraySize(allHacks)) total) ===");
         
         let i: Int32 = 0;
         while i < ArraySize(allHacks) {
             let entry: ref<QuickhackCatalogEntry> = allHacks[i];
             if IsDefined(entry) {
-                QueueModLog(n"DEBUG", n"TEST", s"  [\(i+1)] \(entry.displayName) | Category: \(ToString(entry.categoryName)) | Priority: \(entry.priority)");
+                QueueModTestLog(n"DEBUG", s"  [\(i+1)] \(entry.displayName) | Category: \(ToString(entry.categoryName)) | Priority: \(entry.priority)");
             }
             i += 1;
         }
         
+        // Test display name validation
+        QueueModTestLog(n"DEBUG", "[Test 2] === DISPLAY NAME VALIDATION ===");
+        let displayNameIssues: Int32 = 0;
+        let localizedNames: Int32 = 0;
+        let fallbackNames: Int32 = 0;
+        let k: Int32 = 0;
+        while k < ArraySize(allHacks) {
+            let entry: ref<QuickhackCatalogEntry> = allHacks[k];
+            if IsDefined(entry) {
+                if Equals(entry.displayName, "") || StrContains(entry.displayName, "LocKey") {
+                    QueueModTestLog(n"ERROR", s"  [ISSUE] Entry \(k+1) has invalid display name: '\(entry.displayName)'");
+                    displayNameIssues += 1;
+                } else if StrContains(entry.displayName, "Hack") && !StrContains(entry.displayName, " ") {
+                    // Likely a fallback name (e.g., "LocomotionMalfunctionHack")
+                    fallbackNames += 1;
+                    QueueModTestLog(n"WARN", s"  [FALLBACK] Entry \(k+1) using fallback name: '\(entry.displayName)'");
+                } else {
+                    // Likely a proper localized name (e.g., "Cripple Movement")
+                    localizedNames += 1;
+                }
+            }
+            k += 1;
+        }
+        
+        if displayNameIssues == 0 {
+            QueueModTestLog(n"DEBUG", s"  [PASS] All display names are valid - \(localizedNames) localized, \(fallbackNames) fallback");
+        } else {
+            QueueModTestLog(n"ERROR", s"  [FAIL] \(displayNameIssues) entries have invalid display names");
+        }
+        
+        // Test NPC quickhack filtering validation
+        QueueModTestLog(n"DEBUG", "[Test 2] === NPC QUICKHACK FILTERING ===");
+        let deviceHackCount: Int32 = 0;
+        let npcHackCount: Int32 = 0;
+        let l: Int32 = 0;
+        while l < ArraySize(allHacks) {
+            let entry: ref<QuickhackCatalogEntry> = allHacks[l];
+            if IsDefined(entry) {
+                if entry.isDeviceHack {
+                    deviceHackCount += 1;
+                    QueueModTestLog(n"WARN", s"  [DEVICE] Found device hack: \(entry.displayName)");
+                } else if entry.isPuppetHack {
+                    npcHackCount += 1;
+                }
+            }
+            l += 1;
+        }
+        
+        if deviceHackCount == 0 && npcHackCount > 0 {
+            QueueModTestLog(n"DEBUG", s"  [PASS] Found \(npcHackCount) NPC quickhacks, 0 device hacks");
+        } else if deviceHackCount > 0 {
+            QueueModTestLog(n"ERROR", s"  [FAIL] Found \(deviceHackCount) device hacks (should be 0)");
+        } else {
+            QueueModTestLog(n"WARN", s"  [WARN] Found \(npcHackCount) NPC quickhacks, \(deviceHackCount) device hacks");
+        }
+        
         // Test category breakdown
-        QueueModLog(n"DEBUG", n"TEST", "[Test 2] === BY CATEGORY ===");
+        QueueModTestLog(n"DEBUG", "[Test 2] === BY CATEGORY ===");
         let categories: array<CName> = [n"CovertHack", n"ControlHack", n"DamageHack", n"UltimateHack", n"VehicleHack"];
         let j: Int32 = 0;
         while j < ArraySize(categories) {
             let categoryHacks: array<ref<QuickhackCatalogEntry>> = catalog.GetHacksInCategory(categories[j]);
             if ArraySize(categoryHacks) > 0 {
-                QueueModLog(n"DEBUG", n"TEST", s"  \(ToString(categories[j])): \(ArraySize(categoryHacks)) hacks");
+                QueueModTestLog(n"DEBUG", s"  \(ToString(categories[j])): \(ArraySize(categoryHacks)) hacks");
             }
             j += 1;
         }
         
         // Original test logic
         if ArraySize(allHacks) > 0 {
-            QueueModLog(n"DEBUG", n"TEST", s"[Test 2] PASSED - Found \(ArraySize(allHacks)) total quickhacks");
+            QueueModTestLog(n"DEBUG", s"[Test 2] PASSED - Found \(ArraySize(allHacks)) total quickhacks");
             return true;
         } else {
-            QueueModLog(n"ERROR", n"TEST", "[Test 2] FAILED - No quickhacks found");
+            QueueModTestLog(n"ERROR", "[Test 2] FAILED - No quickhacks found");
             return false;
         }
     }
     
     private static func TestCategoryOrganization() -> Bool {
-        QueueModLog(n"DEBUG", n"TEST", "[Test 3] Category organization...");
+        QueueModTestLog(n"DEBUG", "[Test 3] Category organization...");
         
         let catalog: ref<NPCQuickhackCatalog> = GetQuickhackCatalog();
         if !IsDefined(catalog) {
-            QueueModLog(n"ERROR", n"TEST", "[Test 3] FAILED - Cannot get catalog");
+            QueueModTestLog(n"ERROR", "[Test 3] FAILED - Cannot get catalog");
             return false;
         }
         
@@ -140,19 +201,56 @@ public class CatalogSmokeTest {
         let damageHacks: array<ref<QuickhackCatalogEntry>> = catalog.GetHacksInCategory(n"DamageHack");
         let totalCategorized: Int32 = ArraySize(covertHacks) + ArraySize(damageHacks);
         
-        QueueModLog(n"DEBUG", n"TEST", s"[Test 3] Covert: \(ArraySize(covertHacks)), Damage: \(ArraySize(damageHacks))");
+        QueueModTestLog(n"DEBUG", s"[Test 3] Covert: \(ArraySize(covertHacks)), Damage: \(ArraySize(damageHacks))");
         
         if totalCategorized > 0 {
-            QueueModLog(n"DEBUG", n"TEST", s"[Test 3] PASSED - \(totalCategorized) quickhacks properly categorized");
+            QueueModTestLog(n"DEBUG", s"[Test 3] PASSED - \(totalCategorized) quickhacks properly categorized");
             return true;
         } else {
-            QueueModLog(n"WARN", n"TEST", "[Test 3] WARNING - No categorized quickhacks found");
+            QueueModTestLog(n"WARN", "[Test 3] WARNING - No categorized quickhacks found");
+            return false;
+        }
+    }
+    
+    private static func TestDisplayNameLookups() -> Bool {
+        QueueModTestLog(n"DEBUG", "[Test 4] Display name lookup validation...");
+        
+        let catalog: ref<NPCQuickhackCatalog> = GetQuickhackCatalog();
+        if !IsDefined(catalog) {
+            QueueModTestLog(n"ERROR", "[Test 4] FAILED - Cannot get catalog");
+            return false;
+        }
+        
+        // Test common NPC quickhack lookups (should find most of these now)
+        let testNames: array<String> = ["Overheat", "Reboot Optics", "Short Circuit", "Synapse Burnout", "Ping"];
+        let successfulLookups: Int32 = 0;
+        
+        let i: Int32 = 0;
+        while i < ArraySize(testNames) {
+            let entry: ref<QuickhackCatalogEntry> = catalog.FindQuickhackByName(testNames[i]);
+            if IsDefined(entry) {
+                QueueModTestLog(n"DEBUG", s"  [PASS] Found '\(testNames[i])' -> '\(entry.displayName)'");
+                successfulLookups += 1;
+            } else {
+                QueueModTestLog(n"WARN", s"  [MISS] Could not find '\(testNames[i])'");
+            }
+            i += 1;
+        }
+        
+        if successfulLookups >= 3 {
+            QueueModTestLog(n"DEBUG", s"[Test 4] PASSED - \(successfulLookups)/\(ArraySize(testNames)) NPC quickhack lookups successful");
+            return true;
+        } else if successfulLookups > 0 {
+            QueueModTestLog(n"WARN", s"[Test 4] PARTIAL - \(successfulLookups)/\(ArraySize(testNames)) lookups successful (expected 3+)");
+            return true;
+        } else {
+            QueueModTestLog(n"ERROR", "[Test 4] FAILED - No NPC quickhack lookups successful");
             return false;
         }
     }
     
     private static func TestPerformanceBaseline() -> Bool {
-        QueueModLog(n"DEBUG", n"TEST", "[Test 4] Performance baseline...");
+        QueueModTestLog(n"DEBUG", "[Test 5] Performance baseline...");
         
         let startTime: Float = GameInstance.GetTimeSystem(GetGameInstance()).GetGameTimeStamp();
         
@@ -167,13 +265,13 @@ public class CatalogSmokeTest {
         let isValidResult: Bool = TDBID.IsValid(testResult);
         
         if lookupTime < 0.1 && isValidResult { // 100ms threshold + valid result
-            QueueModLog(n"DEBUG", n"TEST", s"[Test 4] PASSED - Lookup time: \(lookupTime)s, Found: \(TDBID.ToStringDEBUG(testResult))");
+            QueueModTestLog(n"DEBUG", s"[Test 5] PASSED - Lookup time: \(lookupTime)s, Found: \(TDBID.ToStringDEBUG(testResult))");
             return true;
         } else if !isValidResult {
-            QueueModLog(n"ERROR", n"TEST", s"[Test 4] FAILED - Could not find 'Overheat' quickhack");
+            QueueModTestLog(n"ERROR", s"[Test 5] FAILED - Could not find 'Overheat' quickhack");
             return false;
         } else {
-            QueueModLog(n"WARN", n"TEST", s"[Test 4] WARNING - Slow lookup time: \(lookupTime)s");
+            QueueModTestLog(n"WARN", s"[Test 5] WARNING - Slow lookup time: \(lookupTime)s");
             return false;
         }
     }

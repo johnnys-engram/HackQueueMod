@@ -18,6 +18,7 @@ module JE_HackQueueMod.Logging
 // - DEBUG_UI = true      → See UI refresh and wheel operations  
 // - DEBUG_QUEUE = true   → See queue operations (add/remove/process)
 // - DEBUG_EVENTS = true  → See event handling and callbacks
+// - DEBUG_TEST = true    → See smoke test and validation output
 //
 // EXAMPLE: To debug only RAM issues, set:
 // let DEBUG_RAM: Bool = true;
@@ -25,17 +26,19 @@ module JE_HackQueueMod.Logging
 // let DEBUG_UI: Bool = false;
 // let DEBUG_QUEUE: Bool = false;
 // let DEBUG_EVENTS: Bool = false;
+// let DEBUG_TEST: Bool = false;
 // =============================================================================
 
 // MIGRATION PHASE 1: Now active - originals removed from main file
 public func QueueModLog(level: CName, category: CName, message: String) -> Void {
     // Development debug flags - set to false for production builds
-    let DEBUG_QUEUE_MOD: Bool = true;
+    let DEBUG_QUEUE_MOD: Bool = false;
     let DEBUG_RAM: Bool = true;          // RAM operations
-    let DEBUG_QUICKHACK: Bool = true;    // Quickhack activation/execution
+    let DEBUG_QUICKHACK: Bool = false;    // Quickhack activation/execution
     let DEBUG_UI: Bool = false;          // UI operations
     let DEBUG_QUEUE: Bool = false;       // Queue operations
     let DEBUG_EVENTS: Bool = false;      // Event handling
+    let DEBUG_TEST: Bool = true;         // Smoke test and validation output
     
     // Skip if debug disabled
     if Equals(level, n"DEBUG") && !DEBUG_QUEUE_MOD {
@@ -49,6 +52,7 @@ public func QueueModLog(level: CName, category: CName, message: String) -> Void 
         if Equals(category, n"UI") && !DEBUG_UI { return; }
         if Equals(category, n"QUEUE") && !DEBUG_QUEUE { return; }
         if Equals(category, n"EVENTS") && !DEBUG_EVENTS { return; }
+        if Equals(category, n"TEST") && !DEBUG_TEST { return; }
     }
     
     // Format: [CATEGORY] message
@@ -59,6 +63,11 @@ public func QueueModLog(level: CName, category: CName, message: String) -> Void 
 // Legacy function for backward compatibility
 public func QueueModLog(level: CName, message: String) -> Void {
     QueueModLog(level, n"GENERAL", message);
+}
+
+// Convenience function for test logging
+public func QueueModTestLog(level: CName, message: String) -> Void {
+    QueueModLog(level, n"TEST", message);
 }
 
 // Version constants for mod management

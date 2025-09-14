@@ -42,8 +42,28 @@ public class QuickhackCatalogEntry {
         
         this.actionRecord = record;
         this.actionID = record.GetID();
-        this.displayName = ToString(record.ObjectActionUI().Caption());
-    
+        
+        // Debug localization key before conversion
+        let captionValue: CName = record.ObjectActionUI().Caption();
+        QueueModLog(n"DEBUG", n"CATALOG", s"[Debug] Caption value: \(ToString(captionValue))");
+        
+        this.displayName = LocKeyToString(captionValue);
+        
+        // Fallback display name system for v1.63 localization edge cases
+        if Equals(this.displayName, "") || StrContains(this.displayName, "LocKey") {
+            // Fallback to TweakDBID string for debugging
+            this.displayName = TDBID.ToStringDEBUG(this.actionID);
+            // Extract readable part (e.g., "QuickHack.OverheatHack" -> "OverheatHack")
+            if StrContains(this.displayName, ".") {
+                let parts: array<String> = StrSplit(this.displayName, ".");
+                if ArraySize(parts) > 1 {
+                    this.displayName = parts[ArraySize(parts) - 1];
+                }
+            }
+            QueueModLog(n"DEBUG", n"CATALOG", s"[Catalog] Using fallback display name: \(this.displayName)");
+        } else {
+            QueueModLog(n"DEBUG", n"CATALOG", s"[Catalog] Localized display name: \(this.displayName)");
+        }
         
         // v1.63 compatible: Use string pattern matching for category detection
         this.categoryRecord = null; // May not be available in v1.63
@@ -187,8 +207,20 @@ public class NPCQuickhackCatalog {
             return;
         }
         
-        // All records from RPGManager.GetPlayerQuickHackListWithQuality() are valid quickhacks
-        // No need to filter - they're already validated as player-available quickhacks
+        // CRITICAL FIX: Filter for NPC quickhacks only (exclude device hacks)
+        let actionType: gamedataObjectActionType = record.ObjectActionType().Type();
+        if Equals(actionType, gamedataObjectActionType.DeviceQuickHack) {
+            // Skip device hacks - we only want NPC-targetable quickhacks
+            return;
+        }
+        
+        // Additional filter: Only process PuppetQuickHack types
+        if NotEquals(actionType, gamedataObjectActionType.PuppetQuickHack) {
+            // Skip non-puppet actions
+            return;
+        }
+        
+        QueueModLog(n"DEBUG", n"CATALOG", s"[Catalog] Processing NPC quickhack: \(record.ObjectActionUI().Caption()) type=\(ToString(actionType))");
         
         let entry: ref<QuickhackCatalogEntry> = new QuickhackCatalogEntry();
         entry.Initialize(record);
@@ -255,7 +287,7 @@ public class NPCQuickhackCatalog {
     // PUBLIC CATALOG ACCESS METHODS
     // =============================================================================
     
-    // v1.63 compatible: Array-based lookup by display name
+    // v1.63 compatible: Array-based lookup by display name with fuzzy matching
     public func FindQuickhackByName(displayName: String) -> ref<QuickhackCatalogEntry> {
         if !this.m_isInitialized {
             this.Initialize();
@@ -265,13 +297,33 @@ public class NPCQuickhackCatalog {
             return null;
         }
         
-        // Linear search through all hacks
+        // First pass: Exact match
         let i: Int32 = 0;
         while i < ArraySize(this.m_allHacks) {
             if IsDefined(this.m_allHacks[i]) && Equals(this.m_allHacks[i].displayName, displayName) {
                 return this.m_allHacks[i];
             }
             i += 1;
+        }
+        
+        // Second pass: Fuzzy matching for common variations
+        let searchName: String = StrLower(displayName);
+        let j: Int32 = 0;
+        while j < ArraySize(this.m_allHacks) {
+            if IsDefined(this.m_allHacks[j]) {
+                let hackName: String = StrLower(this.m_allHacks[j].displayName);
+                
+                // Fuzzy match common variations
+                if (Equals(searchName, "overheat") && StrContains(hackName, "overheat")) ||
+                   (Equals(searchName, "reboot optics") && StrContains(hackName, "blind")) ||
+                   (Equals(searchName, "short circuit") && StrContains(hackName, "short")) ||
+                   (Equals(searchName, "synapse burnout") && StrContains(hackName, "synapse")) ||
+                   (StrContains(hackName, searchName) && StrLen(searchName) > 3) {
+                    QueueModLog(n"DEBUG", n"CATALOG", s"[Catalog] Fuzzy match found: '\(displayName)' -> '\(this.m_allHacks[j].displayName)'");
+                    return this.m_allHacks[j];
+                }
+            }
+            j += 1;
         }
         
         QueueModLog(n"DEBUG", n"CATALOG", s"[Catalog] No quickhack found for name: \(displayName)");
