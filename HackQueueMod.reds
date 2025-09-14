@@ -8,90 +8,15 @@
 // See CHANGELOG.md for detailed version history and bug fixes
 // =============================================================================
 
+// Import separated modules
+import HackQueueMod.Logging.*
+import HackQueueMod.Core.*
+
 // =============================================================================
-// SCOPED LOGGING SYSTEM FOR FOCUSED DEBUGGING
-// =============================================================================
-// 
-// USAGE GUIDE:
-// To focus on specific areas, set the relevant flag to true:
-// - DEBUG_RAM = true     → See RAM operations (deduction, refunds, changes)
-// - DEBUG_QUICKHACK = true → See quickhack execution and activation
-// - DEBUG_UI = true      → See UI refresh and wheel operations  
-// - DEBUG_QUEUE = true   → See queue operations (add/remove/process)
-// - DEBUG_EVENTS = true  → See event handling and callbacks
-//
-// EXAMPLE: To debug only RAM issues, set:
-// let DEBUG_RAM: Bool = true;
-// let DEBUG_QUICKHACK: Bool = false;
-// let DEBUG_UI: Bool = false;
-// let DEBUG_QUEUE: Bool = false;
-// let DEBUG_EVENTS: Bool = false;
+// ✅ LOGGING FUNCTIONS MIGRATED TO Core/Logging.reds
 // =============================================================================
 
-public func QueueModLog(level: CName, category: CName, message: String) -> Void {
-    // Development debug flags - set to false for production builds
-    let DEBUG_QUEUE_MOD: Bool = true;
-    let DEBUG_RAM: Bool = true;          // RAM operations
-    let DEBUG_QUICKHACK: Bool = true;    // Quickhack activation/execution
-    let DEBUG_UI: Bool = false;          // UI operations
-    let DEBUG_QUEUE: Bool = false;       // Queue operations
-    let DEBUG_EVENTS: Bool = false;      // Event handling
-    
-    // Skip if debug disabled
-    if Equals(level, n"DEBUG") && !DEBUG_QUEUE_MOD {
-        return;
-    }
-    
-    // Category-based filtering
-    if Equals(level, n"DEBUG") {
-        if Equals(category, n"RAM") && !DEBUG_RAM { return; }
-        if Equals(category, n"QUICKHACK") && !DEBUG_QUICKHACK { return; }
-        if Equals(category, n"UI") && !DEBUG_UI { return; }
-        if Equals(category, n"QUEUE") && !DEBUG_QUEUE { return; }
-        if Equals(category, n"EVENTS") && !DEBUG_EVENTS { return; }
-    }
-    
-    // Format: [CATEGORY] message
-    let formattedMessage: String = s"[\(ToString(category))] \(message)";
-    LogChannel(level, formattedMessage);
-}
-
-// Legacy function for backward compatibility
-public func QueueModLog(level: CName, message: String) -> Void {
-    QueueModLog(level, n"GENERAL", message);
-}
-
-// Version constants for mod management
-public func GetHackQueueModVersion() -> String {
-    return "1.0.0";
-}
-
-public func GetHackQueueModCreator() -> String {
-    return "johnnys-engram";
-}
-
-public func GetHackQueueModTargetVersion() -> String {
-    return "Cyberpunk 2077 v1.63";
-}
-
-// Queue entry system for v1.63 compatibility
-public class QueueModEntry {
-    public let action: ref<DeviceAction>;
-    public let fingerprint: String;
-    public let timestamp: Float;
-    public let entryType: Int32;
-    public let ramCost: Int32;
-}
-
-public func CreateQueueModEntry(action: ref<DeviceAction>, key: String, cost: Int32) -> ref<QueueModEntry> {
-    let entry: ref<QueueModEntry> = new QueueModEntry();
-    entry.action = action;
-    entry.fingerprint = key;
-    entry.entryType = 0;
-    entry.timestamp = GameInstance.GetTimeSystem(GetGameInstance()).GetGameTimeStamp();
-    entry.ramCost = cost;
-    return entry;
-}
+// ✅ QUEUE DATA CLASSES MIGRATED TO Core/QueueSystem.reds
 
 public class QueueModActionQueue {
     private let m_queueEntries: array<ref<QueueModEntry>>;
