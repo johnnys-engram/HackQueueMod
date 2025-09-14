@@ -162,9 +162,13 @@ public class QueueModActionQueue {
         
         if IsDefined(sa) {
             ramCost = this.QM_GetRamCostFromAction(sa);
+            QueueModLog(n"DEBUG", n"RAM", s"[QueueMod] Calculated RAM cost from ScriptableDeviceAction: \(ramCost)");
         } else if IsDefined(pa) {
             // PuppetActions might have costs too
             ramCost = pa.GetCost();
+            QueueModLog(n"DEBUG", n"RAM", s"[QueueMod] Calculated RAM cost from PuppetAction: \(ramCost)");
+        } else {
+            QueueModLog(n"DEBUG", n"RAM", s"[QueueMod] Unknown action type for RAM cost calculation: \(action.GetClassName())");
         }
         
         let entry: ref<QueueModEntry> = CreateQueueModEntry(action, key, ramCost);
@@ -188,10 +192,18 @@ public class QueueModActionQueue {
             return false;
         }
         
-        // PHASE 3: RAM now deducted on selection, not on queue (for immediate feedback)
-        // Note: ReserveRAMForAction removed - RAM deducted in ApplyQuickHack instead
-        
-        // Note: GC registration removed - was placeholder code
+        // PHASE 3: Deduct RAM immediately when queuing (using existing method)
+        if ramCost > 0 {
+            QueueModLog(n"DEBUG", n"RAM", s"[QueueMod] About to deduct RAM: cost=\(ramCost)");
+            if this.QM_ChangeRam(GetGameInstance(), -Cast<Float>(ramCost)) {
+                QueueModLog(n"DEBUG", n"RAM", s"RAM deducted for queued action: \(ramCost)");
+            } else {
+                QueueModLog(n"ERROR", n"RAM", s"Failed to deduct RAM for queued action: \(ramCost)");
+                return false; // Don't queue if RAM deduction fails
+            }
+        } else {
+            QueueModLog(n"DEBUG", n"RAM", s"[QueueMod] No RAM cost to deduct (ramCost=\(ramCost))");
+        }
         
         ArrayPush(this.m_queueEntries, entry);
         QueueModLog(n"DEBUG", n"QUEUE", s"Entry added atomically: \(key), actionID=\(TDBID.ToStringDEBUG(actionID)), size=\(ArraySize(this.m_queueEntries))");
@@ -238,14 +250,22 @@ public class QueueModActionQueue {
         // Refund RAM for all queued actions before clearing
         let i: Int32 = 0;
         let queueSize: Int32 = ArraySize(this.m_queueEntries);
-        while i < queueSize {
-            let entry: ref<QueueModEntry> = this.m_queueEntries[i];
-            if IsDefined(entry) && Equals(entry.entryType, 0) && entry.ramCost > 0 {
-                // Use tracked RAM cost instead of recalculating
-                this.QM_ChangeRam(GetGameInstance(), Cast<Float>(entry.ramCost));
-                QueueModLog(n"DEBUG", n"RAM", s"[QueueMod] Refunded RAM: \(entry.ramCost)");
+        
+        // Get player context for RAM refunds (following modding examples)
+        let player: ref<PlayerPuppet> = this.QM_GetPlayer(GetGameInstance());
+        if IsDefined(player) {
+            let sps: ref<StatPoolsSystem> = GameInstance.GetStatPoolsSystem(player.GetGame());
+            let oid: StatsObjectID = Cast<StatsObjectID>(player.GetEntityID());
+            
+            while i < queueSize {
+                let entry: ref<QueueModEntry> = this.m_queueEntries[i];
+                if IsDefined(entry) && Equals(entry.entryType, 0) && entry.ramCost > 0 {
+                    // Use tracked RAM cost instead of recalculating
+                    sps.RequestChangingStatPoolValue(oid, gamedataStatPoolType.Memory, Cast<Float>(entry.ramCost), player, false);
+                    QueueModLog(n"DEBUG", n"RAM", s"[QueueMod] Refunded RAM: \(entry.ramCost)");
+                }
+                i += 1;
             }
-            i += 1;
         }
         
         ArrayClear(this.m_queueEntries);
@@ -751,6 +771,7 @@ public class QueueModHelper {
                     
                     // ✅ ADD THIS: Force refresh UI after queuing
                     if wasQueued {
+                        QueueModLog(n"DEBUG", n"QUICKHACK", s"Executing queued hack via NPC queue (RAM deducted, queued for execution)");
                         QuickhackQueueHelper.ForceQuickhackUIRefresh(gameInstance, targetID);
                         QueueModLog(n"DEBUG", n"UI", "Action queued, UI force refreshed");
                     }
@@ -773,7 +794,11 @@ public class QueueModHelper {
                     return false; // Don't proceed with corrupted queue
                 }
                 QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod][Queue] EnqueueWithKey: Action queue key=\(key)");
-                return queue.PutActionInQueueWithKey(action, key);
+                let wasQueued: Bool = queue.PutActionInQueueWithKey(action, key);
+                if wasQueued {
+                    QueueModLog(n"DEBUG", n"QUICKHACK", s"Executing queued hack via device queue (RAM deducted, queued for execution)");
+                }
+                return wasQueued;
             }
         }
 
@@ -1911,6 +1936,7 @@ private func ApplyQuickHack() -> Bool {
             
             let wasQueued: Bool = queueHelper.PutInQuickHackQueueWithKey(actionToQueue, uniqueKey);
             if wasQueued {
+                QueueModLog(n"DEBUG", n"QUICKHACK", s"Executing queued hack: \(actionName) (RAM deducted, queued for execution)");
                 QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod] Queued action: \(actionName) class=\(actionToQueue.GetClassName())");
                 this.ApplyQueueModCooldownWithData(this.m_selectedData);
                 
