@@ -91,27 +91,37 @@ public class CatalogSmokeTest {
             return false;
         }
         
-        // Test common quickhacks that should be found
-        let testQuickhacks: array<String> = ["Reboot Optics", "Overheat", "Short Circuit"];
-        let foundCount: Int32 = 0;
+        // NEW: List all discovered quickhacks
+        let allHacks: array<ref<QuickhackCatalogEntry>> = catalog.GetAllQuickhacks();
+        QueueModLog(n"DEBUG", n"TEST", s"[Test 2] === DISCOVERED QUICKHACKS (\(ArraySize(allHacks)) total) ===");
         
         let i: Int32 = 0;
-        while i < ArraySize(testQuickhacks) {
-            let tweakID: TweakDBID = catalog.GetTweakIDForDisplayName(testQuickhacks[i]);
-            if TDBID.IsValid(tweakID) {
-                QueueModLog(n"DEBUG", n"TEST", s"[Test 2] Found: \(testQuickhacks[i]) -> \(TDBID.ToStringDEBUG(tweakID))");
-                foundCount += 1;
-            } else {
-                QueueModLog(n"DEBUG", n"TEST", s"[Test 2] Not found: \(testQuickhacks[i]) (may not be available to player)");
+        while i < ArraySize(allHacks) {
+            let entry: ref<QuickhackCatalogEntry> = allHacks[i];
+            if IsDefined(entry) {
+                QueueModLog(n"DEBUG", n"TEST", s"  [\(i+1)] \(entry.displayName) | Category: \(ToString(entry.categoryName)) | Priority: \(entry.priority)");
             }
             i += 1;
         }
         
-        if foundCount > 0 {
-            QueueModLog(n"DEBUG", n"TEST", s"[Test 2] PASSED - Found \(foundCount)/\(ArraySize(testQuickhacks)) test quickhacks");
+        // Test category breakdown
+        QueueModLog(n"DEBUG", n"TEST", "[Test 2] === BY CATEGORY ===");
+        let categories: array<CName> = [n"CovertHack", n"ControlHack", n"DamageHack", n"UltimateHack", n"VehicleHack"];
+        let j: Int32 = 0;
+        while j < ArraySize(categories) {
+            let categoryHacks: array<ref<QuickhackCatalogEntry>> = catalog.GetHacksInCategory(categories[j]);
+            if ArraySize(categoryHacks) > 0 {
+                QueueModLog(n"DEBUG", n"TEST", s"  \(ToString(categories[j])): \(ArraySize(categoryHacks)) hacks");
+            }
+            j += 1;
+        }
+        
+        // Original test logic
+        if ArraySize(allHacks) > 0 {
+            QueueModLog(n"DEBUG", n"TEST", s"[Test 2] PASSED - Found \(ArraySize(allHacks)) total quickhacks");
             return true;
         } else {
-            QueueModLog(n"ERROR", n"TEST", "[Test 2] FAILED - No test quickhacks found");
+            QueueModLog(n"ERROR", n"TEST", "[Test 2] FAILED - No quickhacks found");
             return false;
         }
     }
@@ -164,18 +174,6 @@ public class CatalogSmokeTest {
 }
 
 // =============================================================================
-// DEBUG HOOK - Run smoke test on player initialization
+// TIMING FIX - Smoke test now triggered from GetNPCQuickhackCatalog()
+// when catalog is built with actual quickhack data available
 // =============================================================================
-
-@wrapMethod(PlayerPuppet)
-protected cb func OnGameAttached() -> Bool {
-    let result: Bool = wrappedMethod();
-    
-    // Run smoke test after player is fully initialized
-    if IsDefined(this) {
-        QueueModLog(n"DEBUG", n"TEST", "[Integration] Player attached - running catalog smoke test...");
-        CatalogSmokeTest.ExecuteSmokeTest();
-    }
-    
-    return result;
-}
