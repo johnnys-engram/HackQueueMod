@@ -8,6 +8,7 @@
 module JE_HackQueueMod.UI
 import JE_HackQueueMod.Logging.*
 import JE_HackQueueMod.Core.*
+import JE_HackQueueMod.Core.Catalog.*
 import JE_HackQueueMod.Helpers.*
 import JE_HackQueueMod.Events.*
 
@@ -410,51 +411,53 @@ private func FindActionTweakID(data: ref<QuickhackData>) -> TweakDBID {
         return TDBID.None();
     }
 
-    // Derive from title (common pattern)
     let titleStr: String = GetLocalizedText(data.m_title);
     
-    // Common quickhack mappings for 1.63
-    if Equals(titleStr, "Reboot Optics") {
-        return t"QuickHack.BlindHack";
+    // NEW: Use catalog via PlayerPuppet integration with fallback
+    let playerSystem: ref<PlayerSystem> = GameInstance.GetPlayerSystem(this.m_gameInstance);
+    if IsDefined(playerSystem) {
+        let player: ref<PlayerPuppet> = playerSystem.GetLocalPlayerMainGameObject() as PlayerPuppet;
+        if IsDefined(player) {
+            let catalog: ref<NPCQuickhackCatalog> = player.GetNPCQuickhackCatalog();
+            if IsDefined(catalog) {
+                let tweakID: TweakDBID = catalog.GetTweakIDForDisplayName(titleStr);
+                
+                if TDBID.IsValid(tweakID) {
+                    QueueModLog(n"DEBUG", n"CATALOG", s"[Integration] Catalog lookup success: \(titleStr) -> \(TDBID.ToStringDEBUG(tweakID))");
+                    return tweakID;
+                }
+            }
+        }
     }
-    if Equals(titleStr, "Overheat") {
-        return t"QuickHack.OverheatHack";
+    
+    // CRITICAL: Fallback to manual mappings for safety during transition
+    QueueModLog(n"DEBUG", n"CATALOG", s"[Integration] Catalog lookup failed, using manual fallback for: \(titleStr)");
+    
+    // Keep existing manual mappings as comprehensive fallback
+    if Equals(titleStr, "Reboot Optics") { return t"QuickHack.BlindHack"; }
+    if Equals(titleStr, "Overheat") { return t"QuickHack.OverheatHack"; }
+    if Equals(titleStr, "Short Circuit") { return t"QuickHack.ShortCircuitHack"; }
+    if Equals(titleStr, "Synapse Burnout") { return t"QuickHack.SynapseBurnoutHack"; }
+    if Equals(titleStr, "Distract Enemies") { return t"QuickHack.SuicideHack"; }
+    if Equals(titleStr, "Cyberware Malfunction") { return t"QuickHack.MalfunctionHack"; }
+    if Equals(titleStr, "System Reset") { return t"QuickHack.SystemCollapseHack"; }
+    if Equals(titleStr, "Contagion") { return t"QuickHack.CommsNoiseHack"; }
+    if Equals(titleStr, "Memory Wipe") { return t"QuickHack.MemoryWipeHack"; }
+    if Equals(titleStr, "Weapon Glitch") { return t"QuickHack.WeaponGlitchHack"; }
+    if Equals(titleStr, "Disable Cyberware") { return t"QuickHack.DisableCyberwareHack"; }
+    if Equals(titleStr, "Berserk") { return t"QuickHack.BerserkHack"; }
+    if Equals(titleStr, "Suicide") { return t"QuickHack.SuicideHack"; }
+    
+    // FALLBACK: Check if we have the action reference directly
+    if IsDefined(data.m_action) {
+        let actionID: TweakDBID = data.m_action.GetObjectActionID();
+        if TDBID.IsValid(actionID) {
+            QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod] Using action reference directly: \(titleStr) -> \(TDBID.ToStringDEBUG(actionID))");
+            return actionID;
+        }
     }
-    if Equals(titleStr, "Short Circuit") {
-        return t"QuickHack.ShortCircuitHack";
-    }
-    if Equals(titleStr, "Synapse Burnout") {
-        return t"QuickHack.SynapseBurnoutHack";
-    }
-    if Equals(titleStr, "Distract Enemies") {
-        return t"QuickHack.SuicideHack";
-    }
-    if Equals(titleStr, "Cyberware Malfunction") {
-        return t"QuickHack.MalfunctionHack";
-    }
-    if Equals(titleStr, "System Reset") {
-        return t"QuickHack.SystemCollapseHack";
-    }
-    if Equals(titleStr, "Contagion") {
-        return t"QuickHack.CommsNoiseHack";
-    }
-    if Equals(titleStr, "Memory Wipe") {
-        return t"QuickHack.MemoryWipeHack";
-    }
-    if Equals(titleStr, "Weapon Glitch") {
-        return t"QuickHack.WeaponGlitchHack";
-    }
-    if Equals(titleStr, "Disable Cyberware") {
-        return t"QuickHack.DisableCyberwareHack";
-    }
-    if Equals(titleStr, "Berserk") {
-        return t"QuickHack.BerserkHack";
-    }
-    if Equals(titleStr, "Suicide") {
-        return t"QuickHack.SuicideHack";
-    }
-
-    QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod] Unknown quickhack title: \(titleStr)");
+    
+    QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod] No mapping found for quickhack: \(titleStr)");
     return TDBID.None();
 }
 

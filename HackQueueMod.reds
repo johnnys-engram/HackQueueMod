@@ -14,21 +14,6 @@ import JE_HackQueueMod.Events.*
 import JE_HackQueueMod.Helpers.*
 
 // =============================================================================
-// ✅ LOGGING FUNCTIONS MIGRATED TO Core/Logging.reds
-// =============================================================================
-
-// ✅ QUEUE DATA CLASSES MIGRATED TO Core/QueueSystem.reds
-
-// ✅ QUEUE SYSTEM CLASSES MIGRATED TO Core/QueueSystem.reds
-
-// ✅ EVENT CLASSES MIGRATED TO Events/QueueEvents.reds
-
-
-// ✅ HELPER CLASSES MIGRATED TO Helpers/QueueHelper.reds
-// UI Refresh Helper for v1.63 - MIGRATED
-// QuickhackQueueHelper and QueueModHelper classes have been moved to Helpers/QueueHelper.reds
-
-// =============================================================================
 // Debug Logging for UI Refresh (keep this wrapper)
 // =============================================================================
 
