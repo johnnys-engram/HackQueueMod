@@ -163,9 +163,15 @@ public class CatalogSmokeTest {
         let endTime: Float = GameInstance.GetTimeSystem(GetGameInstance()).GetGameTimeStamp();
         let lookupTime: Float = endTime - startTime;
         
-        if lookupTime < 0.1 { // 100ms threshold
-            QueueModLog(n"DEBUG", n"TEST", s"[Test 4] PASSED - Lookup time: \(lookupTime)s");
+        // Validate that the lookup actually worked
+        let isValidResult: Bool = TDBID.IsValid(testResult);
+        
+        if lookupTime < 0.1 && isValidResult { // 100ms threshold + valid result
+            QueueModLog(n"DEBUG", n"TEST", s"[Test 4] PASSED - Lookup time: \(lookupTime)s, Found: \(TDBID.ToStringDEBUG(testResult))");
             return true;
+        } else if !isValidResult {
+            QueueModLog(n"ERROR", n"TEST", s"[Test 4] FAILED - Could not find 'Overheat' quickhack");
+            return false;
         } else {
             QueueModLog(n"WARN", n"TEST", s"[Test 4] WARNING - Slow lookup time: \(lookupTime)s");
             return false;
