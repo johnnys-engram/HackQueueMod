@@ -51,36 +51,40 @@ public func IsQueueModFull() -> Bool {
 // =============================================================================
 
 @wrapMethod(ScriptedPuppet)
-private func TranslateChoicesIntoQuickSlotCommands(puppetActions: array<ref<PuppetAction>>, out commands: array<ref<QuickhackData>>) -> Void {
-    let isOngoingUpload: Bool = GameInstance.GetStatPoolsSystem(this.GetGame()).IsStatPoolAdded(Cast<StatsObjectID>(this.GetEntityID()), gamedataStatPoolType.QuickHackUpload);
-    let hasQueued: Bool = IsDefined(this.GetQueueModActionQueue()) && this.GetQueueModActionQueue().GetQueueSize() > 0;
+private func TranslateChoicesIntoQuickSlotCommands(
+    puppetActions: array<ref<PuppetAction>>, 
+    out commands: array<ref<QuickhackData>>
+) -> Void {
+    let isOngoingUpload: Bool = GameInstance.GetStatPoolsSystem(this.GetGame())
+        .IsStatPoolAdded(Cast<StatsObjectID>(this.GetEntityID()), gamedataStatPoolType.QuickHackUpload);
+    let hasQueued: Bool = IsDefined(this.GetQueueModActionQueue()) 
+        && this.GetQueueModActionQueue().GetQueueSize() > 0;
     
-    // Call vanilla first
+    // Call vanilla first → all values, costs, cooldowns, prereqs set correctly
     wrappedMethod(puppetActions, commands);
     
-    // Only intervene when queue is active
-    if isOngoingUpload || hasQueued {
-        let queueEnabled: Bool = this.IsQueueModEnabled();
-        let queueFull: Bool = this.IsQueueModFull();
+    if (isOngoingUpload || hasQueued) && this.IsQueueModEnabled() && !this.IsQueueModFull() {
+        let i: Int32 = 0;
+        while i < ArraySize(commands) {
+            let cmd = commands[i];
+            if IsDefined(cmd) 
+                && cmd.m_isLocked 
+                && Equals(cmd.m_type, gamedataObjectActionType.PuppetQuickHack) 
+                && NotEquals(cmd.m_type, gamedataObjectActionType.MinigameUpload) {
 
-        if queueEnabled && !queueFull {
-            // Unlock quickhacks only - breach protocol stays blocked by vanilla logic
-            let i: Int32 = 0;
-            while i < ArraySize(commands) {
-                if IsDefined(commands[i]) && commands[i].m_isLocked && 
-                   Equals(commands[i].m_type, gamedataObjectActionType.PuppetQuickHack) &&
-                    NotEquals(commands[i].m_type, gamedataObjectActionType.MinigameUpload) {
-                    
-                    commands[i].m_isLocked = false;
-                    commands[i].m_inactiveReason = "";
-                    commands[i].m_actionState = EActionInactivityReson.Ready;
+                // Only unblock if the reason was *upload-in-progress*
+                if Equals(cmd.m_inactiveReason, "LocKey#7020") {
+                    cmd.m_isLocked = false;
+                    cmd.m_inactiveReason = "";
+                    cmd.m_actionState = EActionInactivityReson.Ready;
                 }
-                i += 1;
             }
-            QueueModLog(n"DEBUG", n"EVENTS", "[QueueMod] Unblocked quickhacks during upload - breach protocol remains blocked");
+            i += 1;
         }
+        QueueModLog(n"DEBUG", n"EVENTS", "[QueueMod] Ignored upload lock, kept RAM/breach/cooldown intact");
     }
 }
+
 
 // =============================================================================
 // Phase 3.3: Queue Execution on Upload Completion - v1.63 Syntax
