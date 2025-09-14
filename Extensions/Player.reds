@@ -5,9 +5,36 @@
 // Framework: redscript 0.5.14
 // =============================================================================
 
-module HackQueueMod.Extensions.Player
+module JE_HackQueueMod.Extensions.Player
+import JE_HackQueueMod.Logging.*
+import JE_HackQueueMod.Helpers.*
 
-// This file will contain Player extensions:
-// - PlayerPuppet extensions
-// Phase 0: Empty stub to prevent import errors during migration
-// Will be populated in Phase 3
+// =============================================================================
+// PLAYERPUPPET EXTENSIONS
+// =============================================================================
+
+// PlayerPuppet integration for queue helper access
+@addField(PlayerPuppet)
+private let m_queueModHelper: ref<QueueModHelper>;
+
+@addField(PlayerPuppet)
+private let m_qmQuickhackController: wref<QuickhacksListGameController>;
+
+@addMethod(PlayerPuppet)
+public func SetQuickhacksListGameController(controller: wref<QuickhacksListGameController>) -> Void {
+    this.m_qmQuickhackController = controller;
+}
+
+@addMethod(PlayerPuppet)
+public func GetQueueModHelper() -> ref<QueueModHelper> {
+    if !IsDefined(this.m_queueModHelper) {
+        this.m_queueModHelper = new QueueModHelper();
+        QueueModLog(n"DEBUG", n"EVENTS", "[QueueMod] Player loaded - queue system ready");
+    }
+    return this.m_queueModHelper;
+}
+
+@addMethod(PlayerPuppet)
+public func GetQuickhacksListGameController() -> ref<QuickhacksListGameController> {
+    return this.m_qmQuickhackController;
+}

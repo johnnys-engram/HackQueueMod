@@ -5,7 +5,7 @@
 // Framework: redscript 0.5.14
 // =============================================================================
 
-module HackQueueMod.Logging
+module JE_HackQueueMod.Logging
 
 // =============================================================================
 // SCOPED LOGGING SYSTEM FOR FOCUSED DEBUGGING
