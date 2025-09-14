@@ -125,12 +125,12 @@ public class QueueModActionQueue {
     public func PutActionInQueueWithKey(action: ref<DeviceAction>, key: String) -> Bool {
         // CRITICAL: Comprehensive null and validation checks
         if !IsDefined(action) {
-            QueueModLog(n"ERROR", "[QueueMod] Cannot queue null action");
+            QueueModLog(n"ERROR", n"QUEUE", "[QueueMod] Cannot queue null action");
             return false;
         }
         
         if Equals(key, "") {
-            QueueModLog(n"ERROR", "[QueueMod] Cannot queue action with null or empty key");
+            QueueModLog(n"ERROR", n"QUEUE", "[QueueMod] Cannot queue action with null or empty key");
             return false;
         }
         
@@ -169,7 +169,7 @@ public class QueueModActionQueue {
         
         let entry: ref<QueueModEntry> = CreateQueueModEntry(action, key, ramCost);
         if !IsDefined(entry) {
-            QueueModLog(n"ERROR", "[QueueMod] Failed to create queue entry");
+            QueueModLog(n"ERROR", n"QUEUE", "[QueueMod] Failed to create queue entry");
             return false;
         }
         
@@ -177,14 +177,14 @@ public class QueueModActionQueue {
         let actionID: TweakDBID = TDBID.None();
         if IsDefined(sa) {
             actionID = sa.GetObjectActionID();
-            QueueModLog(n"DEBUG", s"[QueueMod] Queuing ScriptableDeviceAction: \(TDBID.ToStringDEBUG(actionID))");
+            QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod] Queuing ScriptableDeviceAction: \(TDBID.ToStringDEBUG(actionID))");
         } else if IsDefined(pa) {
             actionID = pa.GetObjectActionID();
-            QueueModLog(n"DEBUG", s"[QueueMod] Queuing PuppetAction: \(TDBID.ToStringDEBUG(actionID))");
+            QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod] Queuing PuppetAction: \(TDBID.ToStringDEBUG(actionID))");
         }
         
         if !TDBID.IsValid(actionID) {
-            QueueModLog(n"ERROR", "[QueueMod] Action has invalid TweakDBID - cannot queue");
+            QueueModLog(n"ERROR", n"QUEUE", "[QueueMod] Action has invalid TweakDBID - cannot queue");
             return false;
         }
         
@@ -205,7 +205,7 @@ public class QueueModActionQueue {
         
         let entry: ref<QueueModEntry> = this.m_queueEntries[0];
         if !IsDefined(entry) {
-            QueueModLog(n"ERROR", "[QueueMod] Null entry detected - clearing queue for safety");
+            QueueModLog(n"ERROR", n"QUEUE", "[QueueMod] Null entry detected - clearing queue for safety");
             this.ClearQueue();
             return null;
         }
@@ -243,7 +243,7 @@ public class QueueModActionQueue {
             if IsDefined(entry) && Equals(entry.entryType, 0) && entry.ramCost > 0 {
                 // Use tracked RAM cost instead of recalculating
                 this.QM_ChangeRam(GetGameInstance(), Cast<Float>(entry.ramCost));
-                QueueModLog(n"DEBUG", s"[QueueMod] Refunded RAM: \(entry.ramCost)");
+                QueueModLog(n"DEBUG", n"RAM", s"[QueueMod] Refunded RAM: \(entry.ramCost)");
             }
             i += 1;
         }
@@ -279,11 +279,11 @@ public class QueueModActionQueue {
         while i < ArraySize(this.m_queueEntries) {
             let entry: ref<QueueModEntry> = this.m_queueEntries[i];
             if !IsDefined(entry) {
-                QueueModLog(n"ERROR", s"[QueueMod] Null entry at index \(i)");
+                QueueModLog(n"ERROR", n"QUEUE", s"[QueueMod] Null entry at index \(i)");
                 cleanupNeeded = true;
                 isValid = false;
             } else if Equals(entry.entryType, 0) && !IsDefined(entry.action) {
-                QueueModLog(n"ERROR", s"[QueueMod] Invalid action at index \(i): \(entry.fingerprint)");
+                QueueModLog(n"ERROR", n"QUEUE", s"[QueueMod] Invalid action at index \(i): \(entry.fingerprint)");
                 cleanupNeeded = true;
                 isValid = false;
             }
@@ -292,7 +292,7 @@ public class QueueModActionQueue {
         
         // PHASE 4B: Immediate recovery (v1.63 pattern)
         if cleanupNeeded {
-            QueueModLog(n"ERROR", "[QueueMod] Queue corruption detected - executing emergency cleanup");
+            QueueModLog(n"ERROR", n"QUEUE", "[QueueMod] Queue corruption detected - executing emergency cleanup");
             this.EmergencyCleanup();
         }
         
@@ -322,7 +322,7 @@ public class QueueModActionQueue {
         ArrayClear(this.m_queueEntries);
         this.m_queueEntries = cleanEntries;
         
-        QueueModLog(n"DEBUG", s"[QueueMod] Emergency cleanup complete - \(ArraySize(this.m_queueEntries)) entries recovered");
+        QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod] Emergency cleanup complete - \(ArraySize(this.m_queueEntries)) entries recovered");
     }
     
     // RAM Cost Reservation System (Real v1.63 Implementation)
@@ -364,13 +364,13 @@ public class QueueModActionQueue {
         
         let ps: ref<PlayerSystem> = GameInstance.GetPlayerSystem(game);
         if !IsDefined(ps) {
-            QueueModLog(n"ERROR", "[QueueMod] Cannot get player - PlayerSystem is null");
+            QueueModLog(n"ERROR", n"RAM", "[QueueMod] Cannot get player - PlayerSystem is null");
             return null;
         }
         
         let player: ref<PlayerPuppet> = ps.GetLocalPlayerMainGameObject() as PlayerPuppet;
         if !IsDefined(player) {
-            QueueModLog(n"ERROR", "[QueueMod] Cannot get player - LocalPlayerMainGameObject is null");
+            QueueModLog(n"ERROR", n"RAM", "[QueueMod] Cannot get player - LocalPlayerMainGameObject is null");
             return null;
         }
         
@@ -379,7 +379,7 @@ public class QueueModActionQueue {
     
     private func QM_GetRamCostFromAction(action: ref<ScriptableDeviceAction>) -> Int32 {
         if !IsDefined(action) {
-            QueueModLog(n"WARN", "[QueueMod] Cannot get RAM cost - action is null");
+            QueueModLog(n"WARN", n"RAM", "[QueueMod] Cannot get RAM cost - action is null");
             return 0;
         }
         
@@ -393,13 +393,13 @@ public class QueueModActionQueue {
         // v1.63-safe: adjust Memory pool directly on player
         let player: ref<PlayerPuppet> = this.QM_GetPlayer(game);
         if !IsDefined(player) {
-            QueueModLog(n"ERROR", "[QueueMod] Cannot change RAM - player is null");
+            QueueModLog(n"ERROR", n"RAM", "[QueueMod] Cannot change RAM - player is null");
             return false;
         }
         
         let sps: ref<StatPoolsSystem> = GameInstance.GetStatPoolsSystem(game);
         if !IsDefined(sps) {
-            QueueModLog(n"ERROR", "[QueueMod] Cannot change RAM - StatPoolsSystem is null");
+            QueueModLog(n"ERROR", n"RAM", "[QueueMod] Cannot change RAM - StatPoolsSystem is null");
             return false;
         }
         
@@ -496,7 +496,7 @@ public class QuickhackQueueHelper {
         // Get the target entity ID (the device/NPC being hacked)
         targetID = action.GetRequesterID();
         if !EntityID.IsDefined(targetID) {
-            QueueModLog(n"ERROR", "[QueueMod] Cannot refresh - target ID is invalid");
+            QueueModLog(n"ERROR", n"UI", "[QueueMod] Cannot refresh - target ID is invalid");
             return;
         }
         
@@ -511,7 +511,7 @@ public class QuickhackQueueHelper {
         // Note: GameInstance parameter is always valid in this context
         
         if !EntityID.IsDefined(targetID) {
-            QueueModLog(n"ERROR", "[QueueMod] Cannot force refresh - target ID is invalid");
+            QueueModLog(n"ERROR", n"UI", "[QueueMod] Cannot force refresh - target ID is invalid");
             return;
         }
         
@@ -531,19 +531,19 @@ public class QuickhackQueueHelper {
         // Note: GameInstance parameter is always valid in this context
         
         if !EntityID.IsDefined(targetID) {
-            QueueModLog(n"ERROR", "[QueueMod] Cannot schedule refresh - target ID is invalid");
+            QueueModLog(n"ERROR", n"UI", "[QueueMod] Cannot schedule refresh - target ID is invalid");
             return;
         }
         
         let delaySystem: ref<DelaySystem> = GameInstance.GetDelaySystem(gameInstance);
         if !IsDefined(delaySystem) {
-            QueueModLog(n"ERROR", "[QueueMod] Cannot schedule refresh - DelaySystem is null");
+            QueueModLog(n"ERROR", n"UI", "[QueueMod] Cannot schedule refresh - DelaySystem is null");
             return;
         }
         
         let timeSystem: ref<TimeSystem> = GameInstance.GetTimeSystem(gameInstance);
         if !IsDefined(timeSystem) {
-            QueueModLog(n"ERROR", "[QueueMod] Cannot schedule refresh - TimeSystem is null");
+            QueueModLog(n"ERROR", n"UI", "[QueueMod] Cannot schedule refresh - TimeSystem is null");
             return;
         }
         
@@ -572,11 +572,11 @@ public class QuickhackQueueHelper {
 
     // Phase 3: Force Fresh Command Generation with Proper Injection
     public static func ForceFreshCommandGeneration(gameInstance: GameInstance, targetID: EntityID) -> Void {
-        QueueModLog(n"DEBUG", s"[QueueMod] ForceFreshCommandGeneration called for: \(EntityID.ToDebugString(targetID))");
+        QueueModLog(n"DEBUG", n"UI", s"[QueueMod] ForceFreshCommandGeneration called for: \(EntityID.ToDebugString(targetID))");
         
         let targetObject: ref<GameObject> = GameInstance.FindEntityByID(gameInstance, targetID) as GameObject;
         if !IsDefined(targetObject) {
-            QueueModLog(n"ERROR", "[QueueMod] Target not found for fresh command generation");
+            QueueModLog(n"ERROR", n"UI", "[QueueMod] Target not found for fresh command generation");
             return;
         }
         
@@ -612,12 +612,12 @@ public class QuickhackQueueHelper {
             return;
         }
         
-        QueueModLog(n"ERROR", s"[QueueMod] Unknown target type: \(ToString(targetObject.GetClassName()))");
+        QueueModLog(n"ERROR", n"UI", s"[QueueMod] Unknown target type: \(ToString(targetObject.GetClassName()))");
     }
 
     // Critical Missing Piece: Proper Command Injection
     public static func InjectCommandsViaEvent(gameInstance: GameInstance, targetObject: ref<GameObject>, commands: array<ref<QuickhackData>>) -> Void {
-        QueueModLog(n"DEBUG", s"[QueueMod] Injecting \(ArraySize(commands)) commands via RevealInteractionWheel event");
+        QueueModLog(n"DEBUG", n"UI", s"[QueueMod] Injecting \(ArraySize(commands)) commands via RevealInteractionWheel event");
         
         // Create RevealInteractionWheel event with fresh commands
         let revealEvent: ref<RevealInteractionWheel> = new RevealInteractionWheel();
@@ -650,13 +650,13 @@ public class QuickhackQueueHelper {
                     quickhackData.m_cost = sa.GetCost();
                     quickhackData.m_title = TDBID.ToStringDEBUG(sa.GetObjectActionID()); // Convert to String
                     quickhackData.m_type = gamedataObjectActionType.MinigameUpload; // Use available enum type
-                    QueueModLog(n"DEBUG", s"[QueueMod] Converted ScriptableDeviceAction: \(TDBID.ToStringDEBUG(sa.GetObjectActionID()))");
+                    QueueModLog(n"DEBUG", n"UI", s"[QueueMod] Converted ScriptableDeviceAction: \(TDBID.ToStringDEBUG(sa.GetObjectActionID()))");
                 } else {
                     // Fallback for other device action types
                     quickhackData.m_cost = 0;
                     quickhackData.m_title = "Unknown"; // Use String literal
                     quickhackData.m_type = gamedataObjectActionType.MinigameUpload; // Use available enum type
-                    QueueModLog(n"DEBUG", s"[QueueMod] Converted unknown device action type: \(action.GetClassName())");
+                    QueueModLog(n"DEBUG", n"UI", s"[QueueMod] Converted unknown device action type: \(action.GetClassName())");
                 }
                 
                 ArrayPush(commands, quickhackData);
@@ -664,24 +664,24 @@ public class QuickhackQueueHelper {
             i += 1;
         }
         
-        QueueModLog(n"DEBUG", s"[QueueMod] Converted \(ArraySize(commands)) device actions to commands");
+        QueueModLog(n"DEBUG", n"UI", s"[QueueMod] Converted \(ArraySize(commands)) device actions to commands");
     }
 
     // Phase 4: Clear Controller Cache
     public static func ClearControllerCache(gameInstance: GameInstance, targetID: EntityID) -> Void {
-        QueueModLog(n"DEBUG", s"[QueueMod] ClearControllerCache called for: \(EntityID.ToDebugString(targetID))");
+        QueueModLog(n"DEBUG", n"UI", s"[QueueMod] ClearControllerCache called for: \(EntityID.ToDebugString(targetID))");
         
         // Get the player and controller
         let playerSystem: ref<PlayerSystem> = GameInstance.GetPlayerSystem(gameInstance);
         let player: ref<PlayerPuppet> = playerSystem.GetLocalPlayerMainGameObject() as PlayerPuppet;
         if !IsDefined(player) {
-            QueueModLog(n"ERROR", "[QueueMod] Player not found for cache clearing");
+            QueueModLog(n"ERROR", n"UI", "[QueueMod] Player not found for cache clearing");
             return;
         }
         
         let controller: ref<QuickhacksListGameController> = player.GetQuickhacksListGameController();
         if !IsDefined(controller) {
-            QueueModLog(n"ERROR", "[QueueMod] Controller not found for cache clearing");
+            QueueModLog(n"ERROR", n"UI", "[QueueMod] Controller not found for cache clearing");
             return;
         }
         
@@ -701,20 +701,20 @@ public class QueueModHelper {
             return false;
         }
 
-        QueueModLog(n"DEBUG", s"[QueueMod] Attempting to queue action: \(action.GetClassName())");
+        QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod] Attempting to queue action: \(action.GetClassName())");
 
         // Prefer PuppetAction (NPC) to ensure NPC queue receives the action
         let pa: ref<PuppetAction> = action as PuppetAction;
         if IsDefined(pa) {
             let requesterID: EntityID = pa.GetRequesterID();
-            QueueModLog(n"DEBUG", s"[QueueMod][Queue] Route: NPC queue, requesterID=\(ToString(requesterID))");
+            QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod][Queue] Route: NPC queue, requesterID=\(ToString(requesterID))");
             return this.QueueActionOnPuppet(pa);
         }
 
         // Otherwise, fall back to ScriptableDeviceAction (devices, terminals, etc.)
         let sa: ref<ScriptableDeviceAction> = action as ScriptableDeviceAction;
         if IsDefined(sa) {
-            QueueModLog(n"DEBUG", s"[QueueMod][Queue] Route: Action's internal queue, actionType=\(action.GetClassName())");
+            QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod][Queue] Route: Action's internal queue, actionType=\(action.GetClassName())");
             return sa.QueueModQuickHack(action);
         }
 
@@ -723,13 +723,13 @@ public class QueueModHelper {
     }
 
     public func PutInQuickHackQueueWithKey(action: ref<DeviceAction>, key: String) -> Bool {
-        QueueModLog(n"DEBUG", s"[QueueMod] *** QUEUE SYSTEM WITH KEY ACTIVATED *** key=\(key)");
+        QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod] *** QUEUE SYSTEM WITH KEY ACTIVATED *** key=\(key)");
         if !IsDefined(action) {
             QueueModLog(n"DEBUG", n"QUEUE", "No action provided to queue");
             return false;
         }
 
-        QueueModLog(n"DEBUG", s"[QueueMod] Attempting to queue action: \(action.GetClassName()) with key=\(key)");
+        QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod] Attempting to queue action: \(action.GetClassName()) with key=\(key)");
 
         // Prefer PuppetAction (NPC) for key-based queuing
         let pa: ref<PuppetAction> = action as PuppetAction;
@@ -743,10 +743,10 @@ public class QueueModHelper {
                 if IsDefined(queue) {
                     // FIX: Handle validation failure properly
                     if !queue.ValidateQueueIntegrity() {
-                        QueueModLog(n"ERROR", "[QueueMod] Queue validation failed - aborting queue operation");
+                        QueueModLog(n"ERROR", n"QUEUE", "[QueueMod] Queue validation failed - aborting queue operation");
                         return false; // Don't proceed with corrupted queue
                     }
-                    QueueModLog(n"DEBUG", s"[QueueMod][Queue] EnqueueWithKey: NPC=\(GetLocalizedText(puppet.GetDisplayName())) key=\(key)");
+                    QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod][Queue] EnqueueWithKey: NPC=\(GetLocalizedText(puppet.GetDisplayName())) key=\(key)");
                     let wasQueued: Bool = queue.PutActionInQueueWithKey(action, key);
                     
                     // ✅ ADD THIS: Force refresh UI after queuing
@@ -769,10 +769,10 @@ public class QueueModHelper {
             if IsDefined(queue) {
                 // FIX: Handle validation failure properly
                 if !queue.ValidateQueueIntegrity() {
-                    QueueModLog(n"ERROR", "[QueueMod] Queue validation failed - aborting queue operation");
+                    QueueModLog(n"ERROR", n"QUEUE", "[QueueMod] Queue validation failed - aborting queue operation");
                     return false; // Don't proceed with corrupted queue
                 }
-                QueueModLog(n"DEBUG", s"[QueueMod][Queue] EnqueueWithKey: Action queue key=\(key)");
+                QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod][Queue] EnqueueWithKey: Action queue key=\(key)");
                 return queue.PutActionInQueueWithKey(action, key);
             }
         }
@@ -791,19 +791,19 @@ public class QueueModHelper {
         let targetObject: ref<GameObject> = GameInstance.FindEntityByID(gameInstance, targetID) as GameObject;
 
         if !IsDefined(targetObject) {
-            QueueModLog(n"DEBUG", s"[QueueMod][Queue] Abort: requester not found, requesterID=\(ToString(targetID))");
+            QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod][Queue] Abort: requester not found, requesterID=\(ToString(targetID))");
             return false;
         }
 
         let puppet: ref<ScriptedPuppet> = targetObject as ScriptedPuppet;
         if !IsDefined(puppet) {
-            QueueModLog(n"DEBUG", s"[QueueMod][Queue] Abort: requester not a ScriptedPuppet, requesterID=\(ToString(targetID))");
+            QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod][Queue] Abort: requester not a ScriptedPuppet, requesterID=\(ToString(targetID))");
             return false;
         }
 
         let queue: ref<QueueModActionQueue> = puppet.GetQueueModActionQueue();
         if IsDefined(queue) {
-            QueueModLog(n"DEBUG", s"[QueueMod][Queue] Enqueue: NPC=\(GetLocalizedText(puppet.GetDisplayName())) id=\(ToString(puppet.GetEntityID())) action=PuppetAction");
+            QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod][Queue] Enqueue: NPC=\(GetLocalizedText(puppet.GetDisplayName())) id=\(ToString(puppet.GetEntityID())) action=PuppetAction");
             // Generate a unique key for the action
             let uniqueKey: String = this.GenerateQueueKey(puppetAction);
             return queue.PutActionInQueueWithKey(puppetAction, uniqueKey);
@@ -865,17 +865,17 @@ public class QueueModHelper {
             let targetID: EntityID = pa.GetRequesterID();
             let gameInstance: GameInstance = pa.GetExecutor().GetGame();
             let targetObject: ref<GameObject> = GameInstance.FindEntityByID(gameInstance, targetID) as GameObject;
-            QueueModLog(n"DEBUG", s"[QueueMod][TargetResolution] PuppetAction target: \(ToString(targetID)) -> \(IsDefined(targetObject) ? ToString(targetObject.GetClassName()) : "null")");
+            QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod][TargetResolution] PuppetAction target: \(ToString(targetID)) -> \(IsDefined(targetObject) ? ToString(targetObject.GetClassName()) : "null")");
             return targetObject;
         }
 
         let sa: ref<ScriptableDeviceAction> = action as ScriptableDeviceAction;
         if IsDefined(sa) {
-            QueueModLog(n"DEBUG", s"[QueueMod][TargetResolution] ScriptableDeviceAction - no direct target resolution needed");
+            QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod][TargetResolution] ScriptableDeviceAction - no direct target resolution needed");
             return null;
         }
 
-        QueueModLog(n"DEBUG", s"[QueueMod][TargetResolution] Unknown action type: \(action.GetClassName())");
+        QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod][TargetResolution] Unknown action type: \(action.GetClassName())");
         return null;
     }
 
@@ -885,7 +885,7 @@ public class QueueModHelper {
     }
 
         let actionSize: Int32 = queue.GetQueueSize();
-        QueueModLog(n"DEBUG", s"[QueueMod][Validation] Queue integrity check - Action count: \(actionSize)");
+        QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod][Validation] Queue integrity check - Action count: \(actionSize)");
         
         // Additional validation can be added here
         return true;
@@ -939,7 +939,7 @@ public func IsQueueModFull() -> Bool {
     let queueSize: Int32 = queue.GetQueueSize();
     let isFull: Bool = queueSize >= 3;
     if queueSize > 0 {
-        QueueModLog(n"DEBUG", s"[QueueMod] Device queue size: \(queueSize), Full: \(isFull)");
+        QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod] Device queue size: \(queueSize), Full: \(isFull)");
     }
     return isFull;
 }
@@ -957,7 +957,7 @@ protected func SendQuickhackCommands(shouldOpen: Bool) -> Void {
         let queueFull: Bool = this.IsQueueModFull();
 
         if queueEnabled && !queueFull {
-            QueueModLog(n"DEBUG", s"[QueueMod] Device bypassing upload block for queue (device: \(this.GetDisplayName()))");
+            QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod] Device bypassing upload block for queue (device: \(this.GetDisplayName()))");
             this.m_isQhackUploadInProgerss = false;
         }
     }
@@ -993,7 +993,7 @@ public func IsQueueModFull() -> Bool {
     let queueSize: Int32 = queue.GetQueueSize();
     let isFull: Bool = queueSize >= 3;
     if queueSize > 0 {
-        QueueModLog(n"DEBUG", s"[QueueMod] NPC queue size: \(queueSize), Full: \(isFull)");
+        QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod] NPC queue size: \(queueSize), Full: \(isFull)");
     }
     return isFull;
 }
@@ -1011,26 +1011,26 @@ private func TranslateChoicesIntoQuickSlotCommands(puppetActions: array<ref<Pupp
     wrappedMethod(puppetActions, commands);
 
     // Only intervene when there's an active upload
-    QueueModLog(n"DEBUG", s"[QueueMod][Debug] Upload check: isOngoingUpload=\(isOngoingUpload)");
+    QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod][Debug] Upload check: isOngoingUpload=\(isOngoingUpload)");
     if isOngoingUpload || hasQueued {
         let queueEnabled: Bool = this.IsQueueModEnabled();
         let queueFull: Bool = this.IsQueueModFull();
 
-        QueueModLog(n"DEBUG", s"[QueueMod] NPC upload detected - queue enabled: \(queueEnabled), queue full: \(queueFull)");
+        QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod] NPC upload detected - queue enabled: \(queueEnabled), queue full: \(queueFull)");
 
         if queueEnabled && !queueFull {
-            QueueModLog(n"DEBUG", s"[QueueMod][Unblock] NPC=\(GetLocalizedText(this.GetDisplayName())) reason=upload-in-progress queueEnabled=\(queueEnabled) queueFull=\(queueFull)");
+            QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod][Unblock] NPC=\(GetLocalizedText(this.GetDisplayName())) reason=upload-in-progress queueEnabled=\(queueEnabled) queueFull=\(queueFull)");
 
             let i: Int32 = 0;
             let commandsSize: Int32 = ArraySize(commands);
-            QueueModLog(n"DEBUG", s"[QueueMod][Debug] Processing \(commandsSize) commands for unblocking");
+            QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod][Debug] Processing \(commandsSize) commands for unblocking");
             while i < commandsSize {
                 if IsDefined(commands[i]) {
-                    QueueModLog(n"DEBUG", s"[QueueMod][Debug] Command \(i): locked=\(commands[i].m_isLocked) reason='\(GetLocalizedText(commands[i].m_inactiveReason))' type=\(ToString(commands[i].m_type))");
+                    QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod][Debug] Command \(i): locked=\(commands[i].m_isLocked) reason='\(GetLocalizedText(commands[i].m_inactiveReason))' type=\(ToString(commands[i].m_type))");
                     
                     // Check for any locked command first
                     if commands[i].m_isLocked {
-                        QueueModLog(n"DEBUG", s"[QueueMod][Debug] Found locked command - checking reason");
+                        QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod][Debug] Found locked command - checking reason");
                         
                         let reasonStr: String = ToString(commands[i].m_inactiveReason);
                         
@@ -1045,26 +1045,26 @@ private func TranslateChoicesIntoQuickSlotCommands(puppetActions: array<ref<Pupp
                         let isRamLock: Bool = StrContains(reasonStr, "ram") || Equals(reasonStr, "LocKey#27400");  // RAM insufficient
                         
                         if isUploadOrCooldown && !isRamLock {
-                            QueueModLog(n"DEBUG", s"[QueueMod][Unblock] Unlocking non-RAM lock: \(reasonStr)");
+                            QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod][Unblock] Unlocking non-RAM lock: \(reasonStr)");
                             
                             if Equals(commands[i].m_type, gamedataObjectActionType.PuppetQuickHack) || Equals(commands[i].m_type, gamedataObjectActionType.MinigameUpload) {
-                                QueueModLog(n"DEBUG", s"[QueueMod][Debug] Command type matches - unblocking");
+                                QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod][Debug] Command type matches - unblocking");
                                 commands[i].m_isLocked = false;
                                 commands[i].m_inactiveReason = "";
                                 commands[i].m_actionState = EActionInactivityReson.Ready;
 
                                 if Equals(commands[i].m_type, gamedataObjectActionType.PuppetQuickHack) {
-                                    QueueModLog(n"DEBUG", s"[QueueMod] Unblocked quickhack for queue: \(ToString(commands[i].m_type))");
+                                    QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod] Unblocked quickhack for queue: \(ToString(commands[i].m_type))");
                                 } else {
-                                    QueueModLog(n"DEBUG", s"[QueueMod] Preserved breach protocol access: \(ToString(commands[i].m_type))");
+                                    QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod] Preserved breach protocol access: \(ToString(commands[i].m_type))");
                                 }
                             } else {
-                                QueueModLog(n"DEBUG", s"[QueueMod][Debug] Command type does not match - skipping");
+                                QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod][Debug] Command type does not match - skipping");
                             }
                         } else if isRamLock {
-                            QueueModLog(n"DEBUG", s"[QueueMod][Unblock] Skipping RAM lock: \(reasonStr)");
+                            QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod][Unblock] Skipping RAM lock: \(reasonStr)");
                         } else {
-                            QueueModLog(n"DEBUG", s"[QueueMod][Debug] Locked command but not upload-related - skipping");
+                            QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod][Debug] Locked command but not upload-related - skipping");
                         }
                     }
                 }
@@ -1128,7 +1128,7 @@ protected cb func OnUploadProgressStateChanged(evt: ref<UploadProgramProgressEve
         if IsDefined(queue) && queue.GetQueueSize() > 0 {
             // FIX 4: Validate before processing - halt execution if validation fails
             if !queue.ValidateQueueIntegrity() {
-                QueueModLog(n"ERROR", "[QueueMod] Queue integrity failed - halting execution and clearing queue");
+                QueueModLog(n"ERROR", n"QUEUE", "[QueueMod] Queue integrity failed - halting execution and clearing queue");
                 queue.ClearQueue(this.GetGame(), this.GetEntityID()); // Clear corrupted queue
                 return result;
             }
@@ -1154,14 +1154,14 @@ protected cb func OnUploadProgressStateChanged(evt: ref<UploadProgramProgressEve
 @addMethod(ScriptedPuppet)
 private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
     if !IsDefined(entry) {
-        QueueModLog(n"ERROR", "[QueueMod] ExecuteQueuedEntry called with null entry");
+        QueueModLog(n"ERROR", n"QUEUE", "[QueueMod] ExecuteQueuedEntry called with null entry");
         return;
     }
     
     // FIX 4: Validate queue integrity before execution
     let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
     if IsDefined(queue) && !queue.ValidateQueueIntegrity() {
-        QueueModLog(n"ERROR", "[QueueMod] Queue integrity failed during execution - halting");
+        QueueModLog(n"ERROR", n"QUEUE", "[QueueMod] Queue integrity failed during execution - halting");
         queue.ClearQueue(this.GetGame(), this.GetEntityID());
         return;
     }
@@ -1181,7 +1181,7 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
     let playerSystem: ref<PlayerSystem> = GameInstance.GetPlayerSystem(this.GetGame());
     let player: ref<PlayerPuppet> = playerSystem.GetLocalPlayerMainGameObject() as PlayerPuppet;
     if !IsDefined(player) {
-        QueueModLog(n"ERROR", "[QueueMod] Cannot find player for quickhack execution");
+        QueueModLog(n"ERROR", n"QUICKHACK", "[QueueMod] Cannot find player for quickhack execution");
         return;
     }
 
@@ -1202,7 +1202,7 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
         }
         
         if !TDBID.IsValid(actionID) {
-            QueueModLog(n"ERROR", s"[QueueMod][Exec] Action has invalid TweakDBID - skipping execution");
+            QueueModLog(n"ERROR", n"QUICKHACK", s"[QueueMod][Exec] Action has invalid TweakDBID - skipping execution");
             return;
         }
         
@@ -1225,7 +1225,7 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
             this.TriggerQuickhackUIFeedback(saExec);
             
             // CRITICAL FIX: Use ProcessRPGAction for reliable post-upload execution
-            QueueModLog(n"DEBUG", s"[QueueMod][Exec] Processing RPG action for target: \(GetLocalizedText(this.GetDisplayName()))");
+            QueueModLog(n"DEBUG", n"QUICKHACK", s"[QueueMod][Exec] Processing RPG action for target: \(GetLocalizedText(this.GetDisplayName()))");
             saExec.ProcessRPGAction(this.GetGame());
             
             // Check immediately after execution
@@ -1250,7 +1250,7 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
             this.TriggerQuickhackUIFeedback(paExec);
             
             // CRITICAL FIX: Use ProcessRPGAction for reliable post-upload execution
-            QueueModLog(n"DEBUG", s"[QueueMod][Exec] Processing PuppetAction RPG for target: \(GetLocalizedText(this.GetDisplayName()))");
+            QueueModLog(n"DEBUG", n"QUICKHACK", s"[QueueMod][Exec] Processing PuppetAction RPG for target: \(GetLocalizedText(this.GetDisplayName()))");
             paExec.ProcessRPGAction(this.GetGame());
             
             // Check immediately after execution
@@ -1264,13 +1264,13 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
             this.GetQueueModActionQueue().UnlockQueue();
             
         } else {
-            QueueModLog(n"DEBUG", s"[QueueMod][Exec] Unknown action type: \(entry.action.GetClassName())");
+            QueueModLog(n"DEBUG", n"QUICKHACK", s"[QueueMod][Exec] Unknown action type: \(entry.action.GetClassName())");
         }
         
         // PHASE 3: Note: Cost restoration not needed since SetCost not available in v1.63
         
     } else {
-        QueueModLog(n"ERROR", s"[QueueMod] Invalid entry type: \(entry.entryType)");
+        QueueModLog(n"ERROR", n"QUEUE", s"[QueueMod] Invalid entry type: \(entry.entryType)");
     }
 
     // ✅ ADD THIS: Force refresh after execution
@@ -1288,7 +1288,7 @@ private func UpdateQueueHUDOverlay() -> Void {
     let queueSize: Int32 = queue.GetQueueSize();
     if queueSize > 0 {
         // Show queue indicator on target
-        QueueModLog(n"DEBUG", s"[QueueMod][HUD] Target \(GetLocalizedText(this.GetDisplayName())) has \(queueSize) queued hacks");
+        QueueModLog(n"DEBUG", n"UI", s"[QueueMod][HUD] Target \(GetLocalizedText(this.GetDisplayName())) has \(queueSize) queued hacks");
         
         // TODO: Add visual HUD overlay here
         // This would integrate with the game's HUD system to show:
@@ -1310,7 +1310,7 @@ private func NotifyPlayerQueueCanceled(message: String) -> Void {
         if IsDefined(player) {
             // TODO: Implement proper notification system
             // This would show a UI notification to the player
-            QueueModLog(n"DEBUG", s"[QueueMod][Notification] \(message)");
+            QueueModLog(n"DEBUG", n"UI", s"[QueueMod][Notification] \(message)");
         }
     }
 }
@@ -1331,7 +1331,7 @@ private func QM_RefundRam(amount: Int32) -> Void {
     let sps: ref<StatPoolsSystem> = GameInstance.GetStatPoolsSystem(this.GetGame());
     let oid: StatsObjectID = Cast<StatsObjectID>(player.GetEntityID());
     sps.RequestChangingStatPoolValue(oid, gamedataStatPoolType.Memory, Cast<Float>(amount), player, false);
-    QueueModLog(n"DEBUG", s"[QueueMod] Refunded RAM (intent): \(amount)");
+    QueueModLog(n"DEBUG", n"RAM", s"[QueueMod] Refunded RAM (intent): \(amount)");
 }
 
 // Note: ReverseQuickhackEffects removed - using queue locking instead of rollback
@@ -1362,7 +1362,7 @@ private func QM_ApplyQuickhackIntent(tweak: TweakDBID) -> Bool {
     let seID: TweakDBID = this.QM_MapQuickhackToSE(tweak);
     if TDBID.IsValid(seID) {
         StatusEffectHelper.ApplyStatusEffect(this, seID);
-        QueueModLog(n"DEBUG", s"[QueueMod][Exec] Applied SE for quickhack: \(TDBID.ToStringDEBUG(seID))");
+        QueueModLog(n"DEBUG", n"QUICKHACK", s"[QueueMod][Exec] Applied SE for quickhack: \(TDBID.ToStringDEBUG(seID))");
         return true;
     }
     QueueModLog(n"DEBUG", n"QUICKHACK", "No SE mapping for quickhack; skipping");
@@ -1374,12 +1374,12 @@ private func QM_ApplyQuickhackIntent(tweak: TweakDBID) -> Bool {
 protected cb func OnQueueDeathEvent(evt: ref<Event>) -> Bool {
     // Check if this is actually a death-related event
     let eventType: CName = evt.GetClassName();
-    QueueModLog(n"DEBUG", s"[QueueMod] Event received: \(ToString(eventType)) on \(GetLocalizedText(this.GetDisplayName()))");
+    QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod] Event received: \(ToString(eventType)) on \(GetLocalizedText(this.GetDisplayName()))");
     
     // Check for death via status effect or IsDead()
     let isDead: Bool = this.IsDead() || StatusEffectSystem.ObjectHasStatusEffectWithTag(this, n"Dead");
     if isDead {
-        QueueModLog(n"DEBUG", s"[QueueMod] Death confirmed - clearing queue");
+        QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod] Death confirmed - clearing queue");
         let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
         if IsDefined(queue) {
             queue.ClearQueue(this.GetGame(), this.GetEntityID());  // Refunds all queued RAM
@@ -1394,7 +1394,7 @@ protected cb func OnQueueDeathEvent(evt: ref<Event>) -> Bool {
 protected func OnGameAttached() -> Void {
     // Note: RegisterListener API limited in v1.63, using manual event checking instead
     // Death events will be checked in existing methods (OnUploadProgressStateChanged, ExecuteQueuedEntry)
-    QueueModLog(n"DEBUG", s"[QueueMod] Death event checking enabled for \(GetLocalizedText(this.GetDisplayName()))");
+    QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod] Death event checking enabled for \(GetLocalizedText(this.GetDisplayName()))");
 }
 
 // MEMORY LEAK FIX: Clean up queue on death
@@ -1416,7 +1416,7 @@ protected cb func OnStatusEffectApplied(evt: ref<ApplyStatusEffectEvent>) -> Boo
             let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
             if IsDefined(queue) && queue.GetQueueSize() > 0 {
                 queue.ClearQueue(this.GetGame(), this.GetEntityID());
-                QueueModLog(n"DEBUG", s"[QueueMod] Queue cleared on death/unconscious status: \(effectIDStr)");
+                QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod] Queue cleared on death/unconscious status: \(effectIDStr)");
             }
         }
     }
@@ -1426,7 +1426,7 @@ protected cb func OnStatusEffectApplied(evt: ref<ApplyStatusEffectEvent>) -> Boo
 // ✅ CRITICAL FIX: Event Handlers for Sequenced Refresh System
 @addMethod(ScriptedPuppet)
 protected cb func OnQueueModCommandGenEvent(evt: ref<QueueModCommandGenEvent>) -> Bool {
-    QueueModLog(n"DEBUG", s"[QueueMod] Command generation event received for: \(EntityID.ToDebugString(evt.targetID))");
+    QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod] Command generation event received for: \(EntityID.ToDebugString(evt.targetID))");
     
     // Check if this event is for us
     if EntityID.IsDefined(evt.targetID) && Equals(evt.targetID, this.GetEntityID()) {
@@ -1443,7 +1443,7 @@ protected cb func OnQueueModCommandGenEvent(evt: ref<QueueModCommandGenEvent>) -
 
 @addMethod(ScriptedPuppet)
 protected cb func OnQueueModCacheEvent(evt: ref<QueueModCacheEvent>) -> Bool {
-    QueueModLog(n"DEBUG", s"[QueueMod] Cache event received for: \(EntityID.ToDebugString(evt.targetID))");
+    QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod] Cache event received for: \(EntityID.ToDebugString(evt.targetID))");
     
     // Check if this event is for us
     if EntityID.IsDefined(evt.targetID) && Equals(evt.targetID, this.GetEntityID()) {
@@ -1460,7 +1460,7 @@ protected cb func OnQueueModCacheEvent(evt: ref<QueueModCacheEvent>) -> Bool {
 
 @addMethod(ScriptedPuppet)
 protected cb func OnQueueModValidationEvent(evt: ref<QueueModValidationEvent>) -> Bool {
-    QueueModLog(n"DEBUG", s"[QueueMod] Validation event received for: \(EntityID.ToDebugString(evt.targetID))");
+    QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod] Validation event received for: \(EntityID.ToDebugString(evt.targetID))");
     
     // Check if this event is for us
     if EntityID.IsDefined(evt.targetID) && Equals(evt.targetID, this.GetEntityID()) {
@@ -1481,7 +1481,7 @@ protected cb func OnQueueModValidationEvent(evt: ref<QueueModValidationEvent>) -
                 let hasData: Bool = ArraySize(controller.m_data) > 0;
                 let correctTarget: Bool = EntityID.IsDefined(controller.m_lastCompiledTarget) && Equals(controller.m_lastCompiledTarget, targetID);
                 
-                QueueModLog(n"DEBUG", s"[QueueMod] Validation results - Has data: \(hasData), Correct target: \(correctTarget)");
+                QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod] Validation results - Has data: \(hasData), Correct target: \(correctTarget)");
                 
                 // If validation failed, retry the refresh sequence
                 if !hasData || !correctTarget {
@@ -1566,7 +1566,7 @@ public func IsQueueModFull() -> Bool {
     let queueSize: Int32 = queue.GetQueueSize();
     let isFull: Bool = queueSize >= 3;
     if queueSize > 0 {
-        QueueModLog(n"DEBUG", s"[QueueMod] Action queue size: \(queueSize), Full: \(isFull)");
+        QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod] Action queue size: \(queueSize), Full: \(isFull)");
     }
     return isFull;
 }
@@ -1639,7 +1639,7 @@ private let m_qmRefreshScheduled: Bool;
 public func GetQueueModHelper() -> ref<QueueModHelper> {
     if !IsDefined(this.m_queueModHelper) {
         this.m_queueModHelper = new QueueModHelper();
-        QueueModLog(n"DEBUG", "[QueueMod] Player loaded - queue system ready");
+        QueueModLog(n"DEBUG", n"EVENTS", "[QueueMod] Player loaded - queue system ready");
     }
     return this.m_queueModHelper;
 }
@@ -1661,20 +1661,20 @@ public func GetQuickhacksListGameController() -> ref<QuickhacksListGameControlle
 private func IsQuickHackCurrentlyUploading() -> Bool {
     // Rule 1: Selected row UI lock (fastest path)
     if this.QueueModSelectedIsUILocked() {
-        QueueModLog(n"DEBUG", "[QueueMod][Detect] Selected row UI lock indicates upload in progress");
+        QueueModLog(n"DEBUG", n"EVENTS", "[QueueMod][Detect] Selected row UI lock indicates upload in progress");
         return true;
     }
 
     // Rule 1b: Generic lock check for unknown reasons
     if IsDefined(this.m_selectedData) && this.m_selectedData.m_isLocked && 
        NotEquals(this.m_selectedData.m_actionState, EActionInactivityReson.Ready) {
-        QueueModLog(n"DEBUG", "[QueueMod][Detect] Selected item locked with unknown reason → treating as upload");
+        QueueModLog(n"DEBUG", n"EVENTS", "[QueueMod][Detect] Selected item locked with unknown reason → treating as upload");
         return true;
     }
 
     // Rule 1c: Full UI lock scan (fallback for timing races)
     if this.QueueModDetectUILock() {
-        QueueModLog(n"DEBUG", "[QueueMod][Detect] Full UI lock scan indicates upload in progress");
+        QueueModLog(n"DEBUG", n"EVENTS", "[QueueMod][Detect] Full UI lock scan indicates upload in progress");
         return true;
     }
 
@@ -1685,18 +1685,18 @@ private func IsQuickHackCurrentlyUploading() -> Bool {
             let target: ref<GameObject> = GameInstance.FindEntityByID(this.m_gameInstance, targetID) as GameObject;
             if IsDefined(target) {
                 // Log target type for debugging
-                QueueModLog(n"DEBUG", s"[QueueMod][Detect] Target class: \(ToString(target.GetClassName()))");
+                QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod][Detect] Target class: \(ToString(target.GetClassName()))");
                 
                 let puppet: ref<ScriptedPuppet> = target as ScriptedPuppet;
                 if IsDefined(puppet) {
                     // Only check StatPool for NPCs (ScriptedPuppets)
                     let uploading: Bool = GameInstance.GetStatPoolsSystem(this.m_gameInstance)
                         .IsStatPoolAdded(Cast<StatsObjectID>(puppet.GetEntityID()), gamedataStatPoolType.QuickHackUpload);
-                    QueueModLog(n"DEBUG", s"[QueueMod][Detect] NPC upload pool: \(uploading)");
+                    QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod][Detect] NPC upload pool: \(uploading)");
                     return uploading;
                 } else {
                     // Device detected - rely only on UI lock (already checked above)
-                    QueueModLog(n"DEBUG", "[QueueMod][Detect] Device target - UI lock only");
+                    QueueModLog(n"DEBUG", n"EVENTS", "[QueueMod][Detect] Device target - UI lock only");
                     return false;
                 }
             }
@@ -1709,7 +1709,7 @@ private func IsQuickHackCurrentlyUploading() -> Bool {
     if IsDefined(player) {
         let hasUploadPool: Bool = GameInstance.GetStatPoolsSystem(this.m_gameInstance)
             .IsStatPoolAdded(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.QuickHackUpload);
-        QueueModLog(n"DEBUG", s"[QueueMod][Detect] Player upload pool (fallback): \(hasUploadPool)");
+        QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod][Detect] Player upload pool (fallback): \(hasUploadPool)");
         return hasUploadPool;
     }
 
@@ -1724,7 +1724,7 @@ private func QM_RegisterPoolListeners() -> Void {
     // TODO: Implement StatPool listeners when available in v1.63
     // For now, just mark as registered to avoid repeated calls
     this.m_qmPoolsRegistered = true;
-    QueueModLog(n"DEBUG", "[QueueMod] StatPool listeners registered (placeholder)");
+    QueueModLog(n"DEBUG", n"EVENTS", "[QueueMod] StatPool listeners registered (placeholder)");
 }
 
 // TODO: Implement StatPool listener when StatPoolValueChangedEvent is available in v1.63
@@ -1820,46 +1820,46 @@ private func ApplyQuickHack() -> Bool {
     
     // CRITICAL: Validate all required data before processing
     if Equals(actionName, "") {
-        QueueModLog(n"ERROR", "[QueueMod] Invalid action name - executing normally");
+        QueueModLog(n"ERROR", n"QUICKHACK", "[QueueMod] Invalid action name - executing normally");
         return wrappedMethod();
     }
     
     if !EntityID.IsDefined(targetID) {
-        QueueModLog(n"ERROR", "[QueueMod] Invalid target ID - executing normally");
+        QueueModLog(n"ERROR", n"QUICKHACK", "[QueueMod] Invalid target ID - executing normally");
         return wrappedMethod();
     }
     
-    QueueModLog(n"DEBUG", s"[QueueMod] Processing: \(actionName) target: \(ToString(targetID))");
+    QueueModLog(n"DEBUG", n"QUICKHACK", s"[QueueMod] Processing: \(actionName) target: \(ToString(targetID))");
 
     // Check cooldown using the selectedData directly
     if this.QueueModIsOnCooldown(this.m_selectedData) {
-        QueueModLog(n"DEBUG", s"[QueueMod] On cooldown: \(actionName)");
+        QueueModLog(n"DEBUG", n"QUICKHACK", s"[QueueMod] On cooldown: \(actionName)");
         return wrappedMethod();
     }
 
     // FIX 2: RAM Deduction - Move BEFORE path split to ensure ALL paths deduct RAM
     let playerSystem: ref<PlayerSystem> = GameInstance.GetPlayerSystem(this.m_gameInstance);
     if !IsDefined(playerSystem) {
-        QueueModLog(n"ERROR", "[QueueMod] Cannot get PlayerSystem - executing normally");
+        QueueModLog(n"ERROR", n"QUICKHACK", "[QueueMod] Cannot get PlayerSystem - executing normally");
         return wrappedMethod();
     }
     
     let player: ref<PlayerPuppet> = playerSystem.GetLocalPlayerMainGameObject() as PlayerPuppet;
     if !IsDefined(player) {
-        QueueModLog(n"ERROR", "[QueueMod] Cannot get player - executing normally");
+        QueueModLog(n"ERROR", n"QUICKHACK", "[QueueMod] Cannot get player - executing normally");
         return wrappedMethod();
     }
     
     if this.m_selectedData.m_cost > 0 {
         let sps: ref<StatPoolsSystem> = GameInstance.GetStatPoolsSystem(this.m_gameInstance);
         if !IsDefined(sps) {
-            QueueModLog(n"ERROR", "[QueueMod] Cannot get StatPoolsSystem - executing normally");
+            QueueModLog(n"ERROR", n"RAM", "[QueueMod] Cannot get StatPoolsSystem - executing normally");
             return wrappedMethod();
         }
         
         let freeRam: Float = sps.GetStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Memory, false);
         if Cast<Float>(this.m_selectedData.m_cost) > freeRam {
-            QueueModLog(n"ERROR", s"[QueueMod] Insufficient RAM for \(actionName): \(this.m_selectedData.m_cost) > \(freeRam)");
+            QueueModLog(n"ERROR", n"RAM", s"[QueueMod] Insufficient RAM for \(actionName): \(this.m_selectedData.m_cost) > \(freeRam)");
             return false;
         }
         sps.RequestChangingStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Memory, -Cast<Float>(this.m_selectedData.m_cost), player, false);
@@ -1868,15 +1868,15 @@ private func ApplyQuickHack() -> Bool {
 
     // Check if we should queue
     let shouldQueue: Bool = this.IsQuickHackCurrentlyUploading();
-    QueueModLog(n"DEBUG", s"[QueueMod] Should queue: \(shouldQueue)");
+    QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod] Should queue: \(shouldQueue)");
 
     // Additional debug info for upload detection
-    QueueModLog(n"DEBUG", s"[QueueMod][Debug] Upload detection details - UI lock: \(this.QueueModDetectUILock())");
+    QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod][Debug] Upload detection details - UI lock: \(this.QueueModDetectUILock())");
     
     // Show target info for debugging
     if IsDefined(this.m_selectedData) {
         let targetID: EntityID = this.m_selectedData.m_actionOwner;
-        QueueModLog(n"DEBUG", s"[QueueMod][Debug] Target ID: \(ToString(targetID))");
+        QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod][Debug] Target ID: \(ToString(targetID))");
     }
 
     if shouldQueue {
@@ -1886,24 +1886,24 @@ private func ApplyQuickHack() -> Bool {
         // Check if we have a valid action reference
         if IsDefined(this.m_selectedData.m_action) {
             actionToQueue = this.m_selectedData.m_action;
-            QueueModLog(n"DEBUG", s"[QueueMod] Using original action: \(actionToQueue.GetClassName())");
+            QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod] Using original action: \(actionToQueue.GetClassName())");
         } else {
             // Fallback to reconstruction only if no action reference
             actionToQueue = this.ReconstructActionFromData(this.m_selectedData);
-            QueueModLog(n"DEBUG", s"[QueueMod] Reconstructed action from metadata: \(GetLocalizedText(this.m_selectedData.m_title))");
+            QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod] Reconstructed action from metadata: \(GetLocalizedText(this.m_selectedData.m_title))");
         }
         
         if IsDefined(actionToQueue) {
             // Note: RAM already deducted before path split, no need to deduct again
             let queueHelper: ref<QueueModHelper> = player.GetQueueModHelper();
             if !IsDefined(queueHelper) {
-                QueueModLog(n"ERROR", "[QueueMod] Cannot get QueueModHelper - cannot queue action");
+                QueueModLog(n"ERROR", n"QUEUE", "[QueueMod] Cannot get QueueModHelper - cannot queue action");
                 return false;
             }
             
             let timeSystem: ref<TimeSystem> = GameInstance.GetTimeSystem(this.m_gameInstance);
             if !IsDefined(timeSystem) {
-                QueueModLog(n"ERROR", "[QueueMod] Cannot get TimeSystem for key generation");
+                QueueModLog(n"ERROR", n"QUEUE", "[QueueMod] Cannot get TimeSystem for key generation");
                 return false;
             }
             
@@ -1911,7 +1911,7 @@ private func ApplyQuickHack() -> Bool {
             
             let wasQueued: Bool = queueHelper.PutInQuickHackQueueWithKey(actionToQueue, uniqueKey);
             if wasQueued {
-                QueueModLog(n"DEBUG", s"[QueueMod] Queued action: \(actionName) class=\(actionToQueue.GetClassName())");
+                QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod] Queued action: \(actionName) class=\(actionToQueue.GetClassName())");
                 this.ApplyQueueModCooldownWithData(this.m_selectedData);
                 
                 // Fire QueueEvent for state synchronization
@@ -1919,13 +1919,13 @@ private func ApplyQuickHack() -> Bool {
                 
                 // ✅ ADD THIS: Force refresh UI to show new state
                 QuickhackQueueHelper.ForceQuickhackUIRefresh(this.m_gameInstance, targetID);
-                QueueModLog(n"DEBUG", "[QueueMod] Action queued, UI force refreshed");
+                QueueModLog(n"DEBUG", n"UI", "[QueueMod] Action queued, UI force refreshed");
                 return true;
             } else {
-                QueueModLog(n"ERROR", s"[QueueMod] Failed to queue action: \(actionName)");
+                QueueModLog(n"ERROR", n"QUEUE", s"[QueueMod] Failed to queue action: \(actionName)");
             }
         } else {
-            QueueModLog(n"ERROR", s"[QueueMod] Cannot queue - no valid action available");
+            QueueModLog(n"ERROR", n"QUEUE", s"[QueueMod] Cannot queue - no valid action available");
         }
     }
 
@@ -1939,7 +1939,7 @@ private func ApplyQuickHack() -> Bool {
     }
     
     // This should never be reached since shouldQueue=true returns early above
-    QueueModLog(n"ERROR", "[QueueMod] Unexpected code path - shouldQueue was true but we didn't queue");
+    QueueModLog(n"ERROR", n"QUEUE", "[QueueMod] Unexpected code path - shouldQueue was true but we didn't queue");
     return wrappedMethod();
 }
 
@@ -1956,7 +1956,7 @@ private func ReconstructActionFromData(data: ref<QuickhackData>) -> ref<PuppetAc
     // Find the TweakDBID from the UI data
     let actionTweakID: TweakDBID = this.FindActionTweakID(data);
     if !TDBID.IsValid(actionTweakID) {
-        QueueModLog(n"DEBUG", s"[QueueMod] Cannot find TweakDBID for: \(GetLocalizedText(data.m_title))");
+        QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod] Cannot find TweakDBID for: \(GetLocalizedText(data.m_title))");
         return null;
     }
 
@@ -1973,7 +1973,7 @@ private func ReconstructActionFromData(data: ref<QuickhackData>) -> ref<PuppetAc
         puppetAction.RegisterAsRequester(data.m_actionOwner);
     }
     
-    QueueModLog(n"DEBUG", s"[QueueMod] Reconstructed action: \(GetLocalizedText(data.m_title)) tweakID: \(TDBID.ToStringDEBUG(actionTweakID))");
+    QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod] Reconstructed action: \(GetLocalizedText(data.m_title)) tweakID: \(TDBID.ToStringDEBUG(actionTweakID))");
     
     return puppetAction;
 }
@@ -2028,7 +2028,7 @@ private func FindActionTweakID(data: ref<QuickhackData>) -> TweakDBID {
         return t"QuickHack.SuicideHack";
     }
 
-    QueueModLog(n"DEBUG", s"[QueueMod] Unknown quickhack title: \(titleStr)");
+    QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod] Unknown quickhack title: \(titleStr)");
     return TDBID.None();
 }
 
@@ -2061,7 +2061,7 @@ private func ApplyQueueModCooldownWithData(data: ref<QuickhackData>) -> Void {
 
     if IsDefined(player) && TDBID.IsValid(data.m_cooldownTweak) {
         StatusEffectHelper.ApplyStatusEffect(player, data.m_cooldownTweak);
-        QueueModLog(n"DEBUG", s"[QueueMod] Applied cooldown: \(data.m_cooldown)s");
+        QueueModLog(n"DEBUG", n"QUICKHACK", s"[QueueMod] Applied cooldown: \(data.m_cooldown)s");
         
         // Find and update the specific widget
         let i: Int32 = 0;
@@ -2080,14 +2080,14 @@ private func ApplyQueueModCooldownWithData(data: ref<QuickhackData>) -> Void {
         
         // Force UI refresh after cooldown application
         this.RegisterCooldownStatPoolUpdate();
-        QueueModLog(n"DEBUG", "[QueueMod] Cooldown applied - wheel redrawn for recompiling");
+        QueueModLog(n"DEBUG", n"UI", "[QueueMod] Cooldown applied - wheel redrawn for recompiling");
     }
 }
 
 @addMethod(QuickhacksListGameController)
 private func QM_FireQueueEvent(eventType: CName, data: ref<QuickhackData>) -> Void {
     // Fire QueueEvent for state synchronization
-    QueueModLog(n"DEBUG", s"[QueueMod][Event] Fired \(ToString(eventType)) for \(GetLocalizedText(data.m_title))");
+    QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod][Event] Fired \(ToString(eventType)) for \(GetLocalizedText(data.m_title))");
     
     // Create and fire queue event for UI synchronization
     let queueEvent: ref<QueueModEvent> = new QueueModEvent();
@@ -2116,19 +2116,19 @@ private func ScheduleUIRefresh() -> Void {
     // In production, implement proper delay system when API is available
     // Note: UI refresh now handled by QuickhackModule.RequestRefreshQuickhackMenu
     this.m_qmRefreshScheduled = false;
-    QueueModLog(n"DEBUG", "[QueueMod] UI refresh executed immediately (v1.63 fallback)");
+    QueueModLog(n"DEBUG", n"UI", "[QueueMod] UI refresh executed immediately (v1.63 fallback)");
 }
 
 // BUG 2 FIX: Force widget state invalidation for cooldowns (v1.63 compatible)
 @addMethod(QuickhacksListGameController)
 private func ForceWidgetStateUpdate(index: Int32, isLocked: Bool, reason: String) -> Void {
     // v1.63 compatible approach - force widget state changes via list controller refresh
-    QueueModLog(n"DEBUG", s"[QueueMod] Forcing widget state update at index \(index): locked=\(isLocked)");
+    QueueModLog(n"DEBUG", n"UI", s"[QueueMod] Forcing widget state update at index \(index): locked=\(isLocked)");
     
     // Force the entire list to refresh to show updated states
     if IsDefined(this.m_listController) {
         this.m_listController.Refresh();
-        QueueModLog(n"DEBUG", "[QueueMod] List controller refreshed for widget state update");
+        QueueModLog(n"DEBUG", n"UI", "[QueueMod] List controller refreshed for widget state update");
     }
 }
 
@@ -2151,10 +2151,10 @@ private func ForceWheelRedraw() -> Void {
     if IsDefined(rootWidget) {
         rootWidget.SetVisible(false);
         rootWidget.SetVisible(true);
-        QueueModLog(n"DEBUG", "[QueueMod] Forced parent widget visibility toggle");
+        QueueModLog(n"DEBUG", n"UI", "[QueueMod] Forced parent widget visibility toggle");
     }
     
-    QueueModLog(n"DEBUG", "[QueueMod] Wheel redraw completed with data array manipulation");
+    QueueModLog(n"DEBUG", n"UI", "[QueueMod] Wheel redraw completed with data array manipulation");
 }
 
 // Note: QuickhackItemController API not available in v1.63
@@ -2168,19 +2168,19 @@ private let m_qmControllerStored: Bool;
 // Phase 4: Clear Controller Cache with Proper Repopulation
 @addMethod(QuickhacksListGameController)
 public func ClearControllerCacheInternal() -> Void {
-    QueueModLog(n"DEBUG", "[QueueMod] Clearing controller cache with repopulation");
+    QueueModLog(n"DEBUG", n"UI", "[QueueMod] Clearing controller cache with repopulation");
     
     // Store current target for repopulation
     let currentTarget: EntityID = this.m_lastCompiledTarget;
-    QueueModLog(n"DEBUG", s"[QueueMod] Stored current target: \(EntityID.ToDebugString(currentTarget))");
+    QueueModLog(n"DEBUG", n"UI", s"[QueueMod] Stored current target: \(EntityID.ToDebugString(currentTarget))");
     
     // Clear m_data array completely
     ArrayClear(this.m_data);
-    QueueModLog(n"DEBUG", "[QueueMod] Cleared m_data array");
+    QueueModLog(n"DEBUG", n"UI", "[QueueMod] Cleared m_data array");
     
     // Reset selected data
     this.m_selectedData = null;
-    QueueModLog(n"DEBUG", "[QueueMod] Reset m_selectedData");
+    QueueModLog(n"DEBUG", n"UI", "[QueueMod] Reset m_selectedData");
     
     // Reset last compiled target (field removed - not defined)
     // this.m_lastCompiledTarget = EntityID();
@@ -2189,35 +2189,35 @@ public func ClearControllerCacheInternal() -> Void {
     // Clear list controller with force flag
     if IsDefined(this.m_listController) {
         this.m_listController.Clear(true);
-        QueueModLog(n"DEBUG", "[QueueMod] Cleared list controller with force flag");
+        QueueModLog(n"DEBUG", n"UI", "[QueueMod] Cleared list controller with force flag");
     }
     
     // ✅ CRITICAL FIX: Repopulate with fresh data if we had a valid target
     if EntityID.IsDefined(currentTarget) {
-        QueueModLog(n"DEBUG", "[QueueMod] Repopulating with fresh data for stored target");
+        QueueModLog(n"DEBUG", n"UI", "[QueueMod] Repopulating with fresh data for stored target");
         this.RepopulateWithFreshData(currentTarget);
     } else {
-        QueueModLog(n"DEBUG", "[QueueMod] No valid target to repopulate");
+        QueueModLog(n"DEBUG", n"UI", "[QueueMod] No valid target to repopulate");
     }
     
-    QueueModLog(n"DEBUG", "[QueueMod] Controller cache clearing and repopulation complete");
+    QueueModLog(n"DEBUG", n"UI", "[QueueMod] Controller cache clearing and repopulation complete");
 }
 
 // ✅ CRITICAL FIX: Repopulate with Fresh Data
 @addMethod(QuickhacksListGameController)
 public func RepopulateWithFreshData(targetID: EntityID) -> Void {
-    QueueModLog(n"DEBUG", s"[QueueMod] Repopulating with fresh data for: \(EntityID.ToDebugString(targetID))");
+    QueueModLog(n"DEBUG", n"UI", s"[QueueMod] Repopulating with fresh data for: \(EntityID.ToDebugString(targetID))");
     
     let targetObject: ref<GameObject> = GameInstance.FindEntityByID(this.m_gameInstance, targetID) as GameObject;
     if !IsDefined(targetObject) {
-        QueueModLog(n"ERROR", "[QueueMod] Target not found for repopulation");
+        QueueModLog(n"ERROR", n"UI", "[QueueMod] Target not found for repopulation");
         return;
     }
     
     // Check if it's a ScriptedPuppet (NPC)
     let puppet: ref<ScriptedPuppet> = targetObject as ScriptedPuppet;
     if IsDefined(puppet) {
-        QueueModLog(n"DEBUG", "[QueueMod] Repopulating puppet data");
+        QueueModLog(n"DEBUG", n"UI", "[QueueMod] Repopulating puppet data");
         // Generate fresh puppet commands
         let actions: array<ref<PuppetAction>>;
         let commands: array<ref<QuickhackData>>;
@@ -2229,14 +2229,14 @@ public func RepopulateWithFreshData(targetID: EntityID) -> Void {
         
         // Repopulate the UI
         this.PopulateData(commands);
-        QueueModLog(n"DEBUG", s"[QueueMod] Repopulated with \(ArraySize(commands)) puppet commands");
+        QueueModLog(n"DEBUG", n"UI", s"[QueueMod] Repopulated with \(ArraySize(commands)) puppet commands");
         return;
     }
     
     // Check if it's a Device
     let device: ref<Device> = targetObject as Device;
     if IsDefined(device) {
-        QueueModLog(n"DEBUG", "[QueueMod] Repopulating device data");
+        QueueModLog(n"DEBUG", n"UI", "[QueueMod] Repopulating device data");
         // Generate fresh device commands
         let actions: array<ref<DeviceAction>>;
         let context: GetActionsContext;
@@ -2251,11 +2251,11 @@ public func RepopulateWithFreshData(targetID: EntityID) -> Void {
         
         // Repopulate the UI
         this.PopulateData(commands);
-        QueueModLog(n"DEBUG", s"[QueueMod] Repopulated with \(ArraySize(commands)) device commands");
+        QueueModLog(n"DEBUG", n"UI", s"[QueueMod] Repopulated with \(ArraySize(commands)) device commands");
         return;
     }
     
-        QueueModLog(n"ERROR", s"[QueueMod] Unknown target type for repopulation: \(ToString(targetObject.GetClassName()))");
+        QueueModLog(n"ERROR", n"UI", s"[QueueMod] Unknown target type for repopulation: \(ToString(targetObject.GetClassName()))");
     }
 
 
@@ -2267,7 +2267,7 @@ protected cb func OnInitialize() -> Bool {
     if IsDefined(player) {
         player.SetQuickhacksListGameController(this);
         this.m_qmControllerStored = true;
-        QueueModLog(n"DEBUG", "[QueueMod] Controller reference stored on player via OnInitialize");
+        QueueModLog(n"DEBUG", n"UI", "[QueueMod] Controller reference stored on player via OnInitialize");
     }
     return result;
 }
