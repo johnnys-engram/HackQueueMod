@@ -88,8 +88,9 @@ private func TranslateChoicesIntoQuickSlotCommands(puppetActions: array<ref<Pupp
                                                        StrContains(reasonStr, "cooldown") ||
                                                        Equals(reasonStr, "LocKey#40765") ||  // Reloading
                                                        Equals(reasonStr, "LocKey#27398") ||  // Upload
-                                                       Equals(reasonStr, "LocKey#7020") ||
-                                                       Equals(reasonStr, "LocKey#7019");
+                                                       Equals(reasonStr, "LocKey#7020") || //Quickhack upload in progress…
+                                                       Equals(reasonStr, "LocKey#7017"); //Target has no cyberware abilities.
+                                                       
                         let isRamLock: Bool = StrContains(reasonStr, "ram") || Equals(reasonStr, "LocKey#27400");  // RAM insufficient
                         
                         if isUploadOrCooldown && !isRamLock {
