@@ -42,35 +42,17 @@ public class QuickhackQueueHelper {
         QuickhackQueueHelper.ForceQuickhackUIRefresh(gameInstance, targetID);
     }
 
-    // Phase 2: Create Bypass Method - Force UI Refresh with Immediate State Consistency
+    // Phase 2: Create Bypass Method - Single Refresh to Prevent Flashing
     public static func ForceQuickhackUIRefresh(gameInstance: GameInstance, targetID: EntityID) -> Void {
-        // Note: GameInstance parameter is always valid in this context
-        
         if !EntityID.IsDefined(targetID) {
             QueueModLog(n"ERROR", n"UI", "[QueueMod] Cannot force refresh - target ID is invalid");
             return;
         }
         
-        QueueModLog(n"DEBUG", n"UI", s"ForceQuickhackUIRefresh called for target: \(EntityID.ToDebugString(targetID))");
+        QueueModLog(n"DEBUG", n"UI", s"Single refresh for target: \(EntityID.ToDebugString(targetID))");
         
-        // ✅ TIMING FIX: Immediate state consistency to prevent unlock window
-        QueueModLog(n"DEBUG", n"UI", "[QueueMod] Force refresh with immediate state sync");
-        
-        // Step 1: Immediate command generation (no delay)
-        QuickhackQueueHelper.ForceFreshCommandGeneration(gameInstance, targetID);
-        
-        // Step 2: Request vanilla refresh
+        // Single refresh call to prevent flashing
         QuickhackModule.RequestRefreshQuickhackMenu(gameInstance, targetID);
-        
-        // Step 3: Optional delayed validation (reduced timing)
-        let delaySystem: ref<DelaySystem> = GameInstance.GetDelaySystem(gameInstance);
-        if IsDefined(delaySystem) {
-            let validationEvent: ref<QueueModValidationEvent> = new QueueModValidationEvent();
-            validationEvent.targetID = targetID;
-            delaySystem.DelayEvent(null, validationEvent, 0.05); // Reduced from 0.2s
-        }
-        
-        QueueModLog(n"DEBUG", n"UI", "Force refresh completed with immediate state sync");
     }
 
     // ✅ CRITICAL FIX: Proper Delay Event Sequencing for v1.63
