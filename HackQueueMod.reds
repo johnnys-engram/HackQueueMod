@@ -192,18 +192,9 @@ public class QueueModActionQueue {
             return false;
         }
         
-        // PHASE 3: Deduct RAM immediately when queuing (using existing method)
-        if ramCost > 0 {
-            QueueModLog(n"DEBUG", n"RAM", s"[QueueMod] About to deduct RAM: cost=\(ramCost)");
-            if this.QM_ChangeRam(GetGameInstance(), -Cast<Float>(ramCost)) {
-                QueueModLog(n"DEBUG", n"RAM", s"RAM deducted for queued action: \(ramCost)");
-            } else {
-                QueueModLog(n"ERROR", n"RAM", s"Failed to deduct RAM for queued action: \(ramCost)");
-                return false; // Don't queue if RAM deduction fails
-            }
-        } else {
-            QueueModLog(n"DEBUG", n"RAM", s"[QueueMod] No RAM cost to deduct (ramCost=\(ramCost))");
-        }
+        // PHASE 3: RAM already deducted on selection (like vanilla behavior)
+        // No need to validate or deduct RAM again during queuing
+        QueueModLog(n"DEBUG", n"RAM", s"[QueueMod] RAM already deducted on selection: \(ramCost)");
         
         ArrayPush(this.m_queueEntries, entry);
         QueueModLog(n"DEBUG", n"QUEUE", s"Entry added atomically: \(key), actionID=\(TDBID.ToStringDEBUG(actionID)), size=\(ArraySize(this.m_queueEntries))");
@@ -1231,8 +1222,8 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
             return;
         }
         
-        // PHASE 3: Note: SetCost not available in v1.63, RAM already deducted on selection
-        // No need to modify cost since RAM was deducted immediately on queue selection
+        // PHASE 3: RAM already deducted on selection (like vanilla behavior)
+        // No need to deduct RAM again during execution
         
         // Note: ExecuteQueuedEntryViaUI removed - would cause infinite recursion
         
@@ -1250,7 +1241,10 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
             this.TriggerQuickhackUIFeedback(saExec);
             
             // CRITICAL FIX: Use ProcessRPGAction for reliable post-upload execution
+            // BUGFIX: Skip cost validation since RAM already deducted during queuing
             QueueModLog(n"DEBUG", n"QUICKHACK", s"[QueueMod][Exec] Processing RPG action for target: \(GetLocalizedText(this.GetDisplayName()))");
+            
+            // Direct execution since RAM already deducted during queuing
             saExec.ProcessRPGAction(this.GetGame());
             
             // Check immediately after execution
@@ -1275,7 +1269,10 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
             this.TriggerQuickhackUIFeedback(paExec);
             
             // CRITICAL FIX: Use ProcessRPGAction for reliable post-upload execution
+            // BUGFIX: Skip cost validation since RAM already deducted during queuing
             QueueModLog(n"DEBUG", n"QUICKHACK", s"[QueueMod][Exec] Processing PuppetAction RPG for target: \(GetLocalizedText(this.GetDisplayName()))");
+            
+            // Direct execution since RAM already deducted during queuing
             paExec.ProcessRPGAction(this.GetGame());
             
             // Check immediately after execution
@@ -1862,7 +1859,7 @@ private func ApplyQuickHack() -> Bool {
         return wrappedMethod();
     }
 
-    // FIX 2: RAM Deduction - Move BEFORE path split to ensure ALL paths deduct RAM
+    // RAM Deduction - IMMEDIATE on selection (like vanilla behavior)
     let playerSystem: ref<PlayerSystem> = GameInstance.GetPlayerSystem(this.m_gameInstance);
     if !IsDefined(playerSystem) {
         QueueModLog(n"ERROR", n"QUICKHACK", "[QueueMod] Cannot get PlayerSystem - executing normally");
@@ -1891,7 +1888,7 @@ private func ApplyQuickHack() -> Bool {
         QueueModLog(n"DEBUG", n"RAM", s"RAM deducted for quickhack: \(this.m_selectedData.m_cost)");
     }
 
-    // Check if we should queue
+    // Check if we should queue AFTER RAM deduction
     let shouldQueue: Bool = this.IsQuickHackCurrentlyUploading();
     QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod] Should queue: \(shouldQueue)");
 
@@ -1919,7 +1916,19 @@ private func ApplyQuickHack() -> Bool {
         }
         
         if IsDefined(actionToQueue) {
-            // Note: RAM already deducted before path split, no need to deduct again
+            // Get player reference for queuing
+            let playerSystem: ref<PlayerSystem> = GameInstance.GetPlayerSystem(this.m_gameInstance);
+            if !IsDefined(playerSystem) {
+                QueueModLog(n"ERROR", n"QUEUE", "[QueueMod] Cannot get PlayerSystem for queuing");
+                return false;
+            }
+            
+            let player: ref<PlayerPuppet> = playerSystem.GetLocalPlayerMainGameObject() as PlayerPuppet;
+            if !IsDefined(player) {
+                QueueModLog(n"ERROR", n"QUEUE", "[QueueMod] Cannot get player for queuing");
+                return false;
+            }
+            
             let queueHelper: ref<QueueModHelper> = player.GetQueueModHelper();
             if !IsDefined(queueHelper) {
                 QueueModLog(n"ERROR", n"QUEUE", "[QueueMod] Cannot get QueueModHelper - cannot queue action");
@@ -1959,8 +1968,8 @@ private func ApplyQuickHack() -> Bool {
     // This prevents intent pollution that causes double execution
     // Intents should only be stored when we actually want to queue something
     if !shouldQueue {
-        // For non-queued hacks, just execute normally without storing any intent
-        QueueModLog(n"DEBUG", n"QUICKHACK", "Executing non-queued hack normally (no intent storage)");
+        // For non-queued hacks, execute normally (RAM already deducted above)
+        QueueModLog(n"DEBUG", n"QUICKHACK", "Executing non-queued hack normally (RAM already deducted)");
         return wrappedMethod();
     }
     
