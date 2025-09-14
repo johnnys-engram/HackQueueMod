@@ -69,8 +69,7 @@ private func TranslateChoicesIntoQuickSlotCommands(puppetActions: array<ref<Pupp
             while i < ArraySize(commands) {
                 if IsDefined(commands[i]) && commands[i].m_isLocked && 
                    Equals(commands[i].m_type, gamedataObjectActionType.PuppetQuickHack) &&
-                   (Equals(ToString(commands[i].m_inactiveReason), "LocKey#27398") || 
-                    Equals(ToString(commands[i].m_inactiveReason), "LocKey#7020")) {
+                    NotEquals(commands[i].m_type, gamedataObjectActionType.MinigameUpload) {
                     
                     commands[i].m_isLocked = false;
                     commands[i].m_inactiveReason = "";
