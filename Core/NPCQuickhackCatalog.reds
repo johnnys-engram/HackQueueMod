@@ -43,8 +43,8 @@ public class QuickhackCatalogEntry {
         this.actionRecord = record;
         this.actionID = record.GetID();
         
-        // v1.63 COMPATIBLE localization pattern (from project evidence)
-        this.displayName = LocKeyToString(record.ObjectActionUI().Caption());
+        // v1.63 COMPATIBLE localization pattern (from project evidence)  
+        this.displayName = QueueModLocKeyToString(record.ObjectActionUI().Caption());
         
         // Enhanced fallback for v1.63 edge cases
         if Equals(this.displayName, "") || StrContains(this.displayName, "LocKey") {
@@ -281,7 +281,14 @@ public class NPCQuickhackCatalog {
             return;
         }
         
-        QueueModLog(n"DEBUG", n"CATALOG", s"[Catalog] Processing NPC quickhack: \(record.ObjectActionUI().Caption()) type=\(ToString(actionType))");
+        // Debug logging to diagnose localization issues
+        let rawCaption: CName = record.ObjectActionUI().Caption();
+        let captionStr: String = ToString(rawCaption);
+        QueueModLog(n"DEBUG", n"CATALOG", s"[Debug] Raw caption: '\(captionStr)'");
+        let localizedCaption: String = QueueModLocKeyToString(rawCaption);
+        QueueModLog(n"DEBUG", n"CATALOG", s"[Debug] Localized: '\(localizedCaption)'");
+        
+        QueueModLog(n"DEBUG", n"CATALOG", s"[Catalog] Processing NPC quickhack: \(localizedCaption) type=\(ToString(actionType))");
         
         let entry: ref<QuickhackCatalogEntry> = new QuickhackCatalogEntry();
         entry.Initialize(record);

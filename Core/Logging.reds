@@ -32,13 +32,14 @@ module JE_HackQueueMod.Logging
 // MIGRATION PHASE 1: Now active - originals removed from main file
 public func QueueModLog(level: CName, category: CName, message: String) -> Void {
     // Development debug flags - set to false for production builds
-    let DEBUG_QUEUE_MOD: Bool = true;    // Master debug switch - set to false for production
-    let DEBUG_RAM: Bool = true;          // RAM operations
-    let DEBUG_QUICKHACK: Bool = false;    // Quickhack activation/execution
+    let DEBUG_QUEUE_MOD: Bool = true;    // Master debug switch
+    let DEBUG_RAM: Bool = false;          // RAM operations
+    let DEBUG_QUICKHACK: Bool = false;   // Quickhack activation/execution
     let DEBUG_UI: Bool = false;          // UI operations
-    let DEBUG_QUEUE: Bool = false;       // Queue operations
+    let DEBUG_QUEUE: Bool = true;       // Queue operations
     let DEBUG_EVENTS: Bool = false;      // Event handling
     let DEBUG_TEST: Bool = true;         // Smoke test and validation output
+    let DEBUG_CATALOG: Bool = false;      // ⭐ ADD THIS LINE
     
     // Skip if debug disabled
     if Equals(level, n"DEBUG") && !DEBUG_QUEUE_MOD {
@@ -53,6 +54,7 @@ public func QueueModLog(level: CName, category: CName, message: String) -> Void 
         if Equals(category, n"QUEUE") && !DEBUG_QUEUE { return; }
         if Equals(category, n"EVENTS") && !DEBUG_EVENTS { return; }
         if Equals(category, n"TEST") && !DEBUG_TEST { return; }
+        if Equals(category, n"CATALOG") && !DEBUG_CATALOG { return; } // ⭐ ADD THIS LINE
     }
     
     // Format: [CATEGORY] message

@@ -596,3 +596,31 @@ protected cb func OnInitialize() -> Bool {
     }
     return result;
 }
+
+@addMethod(QuickhacksListGameController)
+private func TestActionReferencePreservation(data: ref<QuickhackData>) -> ref<DeviceAction> {
+    if !IsDefined(data) {
+        QueueModLog(n"DEBUG", n"QUEUE", "[TEST] QuickhackData is null");
+        return null;
+    }
+    
+    QueueModLog(n"DEBUG", n"QUEUE", s"[TEST] Testing action preservation for: \(GetLocalizedText(data.m_title))");
+    
+    // Test 1: Check if m_action exists and is valid
+    if IsDefined(data.m_action) {
+        QueueModLog(n"DEBUG", n"QUEUE", s"[TEST] ✓ m_action exists: \(data.m_action.GetClassName())");
+        
+        // Test 2: Check if it has a valid TweakDBID
+        let actionID: TweakDBID = data.m_action.GetObjectActionID();
+        if TDBID.IsValid(actionID) {
+            QueueModLog(n"DEBUG", n"QUEUE", s"[TEST] ✓ Action ID valid: \(TDBID.ToStringDEBUG(actionID))");
+            return data.m_action;
+        } else {
+            QueueModLog(n"DEBUG", n"QUEUE", "[TEST] ✗ Action ID invalid");
+        }
+    } else {
+        QueueModLog(n"DEBUG", n"QUEUE", "[TEST] ✗ m_action is null - data loss confirmed");
+    }
+    
+    return null;
+}
