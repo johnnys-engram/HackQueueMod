@@ -32,6 +32,9 @@ public func IsQueueModEnabled() -> Bool {
     return true;
 }
 
+@addField(ScriptedPuppet)
+private let m_lastQueueSizeLogged: Int32;
+
 @addMethod(ScriptedPuppet)
 public func IsQueueModFull() -> Bool {
     let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
@@ -40,8 +43,11 @@ public func IsQueueModFull() -> Bool {
     }
     let queueSize: Int32 = queue.GetQueueSize();
     let isFull: Bool = queueSize >= 3;
-    if queueSize > 0 {
-        QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod] NPC queue size: \(queueSize), Full: \(isFull)");
+    
+    // Only log when size changes
+    if queueSize != this.m_lastQueueSizeLogged {
+        QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod] NPC queue size changed: \(queueSize), Full: \(isFull)");
+        this.m_lastQueueSizeLogged = queueSize;
     }
     return isFull;
 }
