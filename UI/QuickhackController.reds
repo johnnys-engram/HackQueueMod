@@ -52,23 +52,7 @@ public func ClearControllerCacheInternal() -> Void {
         QueueModLog(n"DEBUG", n"UI", "[QueueMod] Cleared list controller with force flag");
     }
     
-    // ✅ CRITICAL FIX: Repopulate with fresh data if we had a valid target
-    if EntityID.IsDefined(currentTarget) {
-        QueueModLog(n"DEBUG", n"UI", "[QueueMod] Repopulating with fresh data for stored target");
-        this.RepopulateWithFreshData(currentTarget);
-    } else {
-        QueueModLog(n"DEBUG", n"UI", "[QueueMod] No valid target to repopulate");
-    }
-    
     QueueModLog(n"DEBUG", n"UI", "[QueueMod] Controller cache clearing and repopulation complete");
-}
-
-// ✅ CRITICAL FIX: Repopulate with Fresh Data
-@addMethod(QuickhacksListGameController)
-public func RepopulateWithFreshData(targetID: EntityID) -> Void {
-    QueueModLog(n"DEBUG", n"UI", s"[QueueMod] Repopulating with fresh data for: \(EntityID.ToDebugString(targetID))");
-    
-    QueueModLog(n"DEBUG", n"UI", "[QueueMod] Fresh data repopulation complete");
 }
 
 // =============================================================================
@@ -92,7 +76,7 @@ private func IsQuickHackCurrentlyUploading() -> Bool {
 
     // Rule 1c: Full UI lock scan (fallback for timing races)
     if this.QueueModDetectUILock() {
-        QueueModLog(n"DEBUG", n"EVENTS", "[QueueMod][Detect] Full UI lock scan indicates upload in progress");
+        QueueModLog(n"DEBUG", n"EVENTS", "[QueueMod][Detect] Target indicates upload in progress");
         return true;
     }
 
@@ -166,10 +150,12 @@ private func QueueModDetectUILock() -> Bool {
     while i < ArraySize(this.m_data) {
         let entry: ref<QuickhackData> = this.m_data[i];
         if IsDefined(entry) && entry.m_isLocked && 
-           (Equals(ToString(entry.m_inactiveReason), "LocKey#27398") || 
-            Equals(ToString(entry.m_inactiveReason), "LocKey#40765") ||
-            Equals(ToString(entry.m_inactiveReason), "LocKey#7020") ||
-            Equals(ToString(entry.m_inactiveReason), "LocKey#7019")) {
+           (Equals(ToString(entry.m_inactiveReason), "LocKey#43809") ||   //Upload in Progress      
+            Equals(ToString(entry.m_inactiveReason), "LocKey#7020")) //||   //Quickhack upload in progress…
+ //          (Equals(ToString(entry.m_inactiveReason), "LocKey#27398") || //Out of Memory
+ //           Equals(ToString(entry.m_inactiveReason), "LocKey#40765") || //Blocked
+ //           Equals(ToString(entry.m_inactiveReason), "LocKey#7019")) 
+            { //?
             return true;
         }
         i += 1;
@@ -490,13 +476,8 @@ private func ApplyQueueModCooldownWithData(data: ref<QuickhackData>) -> Void {
             }
             i += 1;
         }
-        
-        // BUG 2 FIX: Force immediate visual update
-        this.ForceWheelRedraw();
-        
-        // Force UI refresh after cooldown application
+ 
         this.RegisterCooldownStatPoolUpdate();
-        QueueModLog(n"DEBUG", n"UI", "[QueueMod] Cooldown applied - wheel redrawn for recompiling");
     }
 }
 
@@ -516,61 +497,6 @@ private func QM_FireQueueEvent(eventType: CName, data: ref<QuickhackData>) -> Vo
     
     // Also trigger immediate UI refresh
     // Note: UI refresh now handled by QuickhackModule.RequestRefreshQuickhackMenu
-}
-
-// UI refresh method
-// FIX 3: UI Refresh Scheduler - Active refresh for async state changes
-@addMethod(QuickhacksListGameController)
-private func ScheduleUIRefresh() -> Void {
-    if this.m_qmRefreshScheduled {
-        return; // Already scheduled
-    }
-    
-    this.m_qmRefreshScheduled = true;
-    
-    // Note: DelayEvent API limited in v1.63, using immediate refresh as fallback
-    // In production, implement proper delay system when API is available
-    // Note: UI refresh now handled by QuickhackModule.RequestRefreshQuickhackMenu
-    this.m_qmRefreshScheduled = false;
-    QueueModLog(n"DEBUG", n"UI", "[QueueMod] UI refresh executed immediately (v1.63 fallback)");
-}
-
-// BUG 2 FIX: Force widget state invalidation for cooldowns (v1.63 compatible)
-@addMethod(QuickhacksListGameController)
-private func ForceWidgetStateUpdate(index: Int32, isLocked: Bool, reason: String) -> Void {
-    // v1.63 compatible approach - force widget state changes via list controller refresh
-    QueueModLog(n"DEBUG", n"UI", s"[QueueMod] Forcing widget state update at index \(index): locked=\(isLocked)");
-    
-    // Force the entire list to refresh to show updated states
-    if IsDefined(this.m_listController) {
-        this.m_listController.Refresh();
-        QueueModLog(n"DEBUG", n"UI", "[QueueMod] List controller refreshed for widget state update");
-    }
-}
-
-// BUG 2 FIX: Force wheel redraw for immediate visual updates (v1.63 compatible)
-@addMethod(QuickhacksListGameController)
-private func ForceWheelRedraw() -> Void {
-    // Force complete data reload (v1.63 compatible approach)
-    let tempData: array<ref<QuickhackData>> = this.m_data;
-    ArrayClear(this.m_data);
-    if IsDefined(this.m_listController) {
-        this.m_listController.Clear();
-    }
-    
-    // Re-add with updated states
-    this.m_data = tempData;
-    this.PopulateData(this.m_data);
-    
-    // Trigger parent widget invalidation
-    let rootWidget: ref<inkWidget> = this.GetRootWidget();
-    if IsDefined(rootWidget) {
-        rootWidget.SetVisible(false);
-        rootWidget.SetVisible(true);
-        QueueModLog(n"DEBUG", n"UI", "[QueueMod] Forced parent widget visibility toggle");
-    }
-    
-    QueueModLog(n"DEBUG", n"UI", "[QueueMod] Wheel redraw completed with data array manipulation");
 }
 
 // Store controller reference on player for UI access - using OnInitialize
