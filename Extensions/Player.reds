@@ -8,8 +8,6 @@
 module JE_HackQueueMod.Extensions.Player
 import JE_HackQueueMod.Logging.*
 import JE_HackQueueMod.Core.*
-import JE_HackQueueMod.Core.Catalog.*
-import JE_HackQueueMod.Core.Test.*
 import JE_HackQueueMod.Helpers.*
 
 // =============================================================================
@@ -40,24 +38,4 @@ public func GetQueueModHelper() -> ref<QueueModHelper> {
 @addMethod(PlayerPuppet)
 public func GetQuickhacksListGameController() -> ref<QuickhacksListGameController> {
     return this.m_qmQuickhackController;
-}
-
-// =============================================================================
-// CATALOG INTEGRATION - PlayerPuppet Storage Pattern
-// =============================================================================
-
-@addField(PlayerPuppet)
-private let m_npcQuickhackCatalog: ref<NPCQuickhackCatalog>;
-
-@addMethod(PlayerPuppet)
-public func GetNPCQuickhackCatalog() -> ref<NPCQuickhackCatalog> {
-    if !IsDefined(this.m_npcQuickhackCatalog) {
-        this.m_npcQuickhackCatalog = new NPCQuickhackCatalog();
-        this.m_npcQuickhackCatalog.Initialize();
-        QueueModLog(n"DEBUG", n"CATALOG", "[Integration] Catalog initialized on player");
-        
-        // NEW: Run detailed smoke test after catalog is built with real data
-        CatalogSmokeTest.ExecuteSmokeTest();
-    }
-    return this.m_npcQuickhackCatalog;
 }

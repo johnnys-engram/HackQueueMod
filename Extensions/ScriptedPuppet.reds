@@ -50,6 +50,7 @@ public func IsQueueModFull() -> Bool {
 // Phase 3.2: NPC Upload Detection & Queue Processing - v1.63 Compatible Syntax
 // =============================================================================
 
+// Just add this ONE method to your ScriptedPuppet.reds file:
 @wrapMethod(ScriptedPuppet)
 private func TranslateChoicesIntoQuickSlotCommands(
     puppetActions: array<ref<PuppetAction>>, 
@@ -70,21 +71,99 @@ private func TranslateChoicesIntoQuickSlotCommands(
             if IsDefined(cmd) 
                 && cmd.m_isLocked 
                 && Equals(cmd.m_type, gamedataObjectActionType.PuppetQuickHack) 
-                && NotEquals(cmd.m_type, gamedataObjectActionType.MinigameUpload) {
+                && Equals(cmd.m_inactiveReason, "LocKey#7020") {
 
-                // Only unblock if the reason was *upload-in-progress*
-                if Equals(cmd.m_inactiveReason, "LocKey#7020") {
-                    cmd.m_isLocked = false;
-                    cmd.m_inactiveReason = "";
-                    cmd.m_actionState = EActionInactivityReson.Ready;
+                // Unlock upload-blocked command
+                cmd.m_isLocked = false;
+                cmd.m_inactiveReason = "";
+                cmd.m_actionState = EActionInactivityReson.Ready;
+                
+                // Re-validate with other checks
+                this.RevalidateCommandExcludingUpload(cmd, puppetActions);
+            }
+            i += 1;
+        }
+        
+        // Sync PuppetAction states (critical vanilla requirement)
+        let j: Int32 = 0;
+        while j < ArraySize(commands) {
+            if IsDefined(commands[j]) && commands[j].m_isLocked && IsDefined(commands[j].m_action) {
+                let puppetAction: ref<PuppetAction> = commands[j].m_action as PuppetAction;
+                if IsDefined(puppetAction) {
+                    puppetAction.SetInactiveWithReason(false, commands[j].m_inactiveReason);
+                }
+            }
+            j += 1;
+        }
+        
+        QueueModLog(n"DEBUG", n"EVENTS", "[QueueMod] Upload bypass with re-validation complete");
+    }
+}
+
+@addMethod(ScriptedPuppet)
+private func RevalidateCommandExcludingUpload(
+    cmd: ref<QuickhackData>, 
+    puppetActions: array<ref<PuppetAction>>
+) -> Void {
+    if !IsDefined(cmd) || !IsDefined(cmd.m_action) {
+        return;
+    }
+    
+    let action: ref<PuppetAction> = cmd.m_action as PuppetAction;
+    if !IsDefined(action) {
+        return;
+    }
+    
+    // Re-run vanilla validation checks (excluding upload)
+    
+    // 1. Cost check
+    if !action.CanPayCost() {
+        cmd.m_isLocked = true;
+        cmd.m_actionState = EActionInactivityReson.OutOfMemory;
+        cmd.m_inactiveReason = "LocKey#27398";
+        return;
+    }
+    
+    // 2. Possibility/visibility check  
+    let player: ref<PlayerPuppet> = GetPlayer(this.GetGame());
+    if !IsDefined(player) || !action.IsPossible(this) || !action.IsVisible(player) {
+        cmd.m_isLocked = true;
+        cmd.m_actionState = EActionInactivityReson.Invalid;
+        cmd.m_inactiveReason = "LocKey#7019";
+        return;
+    }
+    
+    // 3. Check if action became inactive
+    if action.IsInactive() {
+        cmd.m_isLocked = true;
+        cmd.m_inactiveReason = action.GetInactiveReason();
+        return;
+    }
+    
+    // 4. Target active prereqs (simplified)
+    let actionRecord: ref<ObjectAction_Record> = action.GetObjectActionRecord();
+    if IsDefined(actionRecord) && actionRecord.GetTargetActivePrereqsCount() > 0 {
+        let targetActivePrereqs: array<wref<ObjectActionPrereq_Record>>;
+        actionRecord.TargetActivePrereqs(targetActivePrereqs);
+        
+        let i: Int32 = 0;
+        while i < ArraySize(targetActivePrereqs) {
+            if IsDefined(targetActivePrereqs[i]) {
+                let prereqsToCheck: array<wref<IPrereq_Record>>;
+                targetActivePrereqs[i].FailureConditionPrereq(prereqsToCheck);
+                if !RPGManager.CheckPrereqs(prereqsToCheck, this) {
+                    cmd.m_isLocked = true;
+                    cmd.m_inactiveReason = targetActivePrereqs[i].FailureExplanation();
+                    return;
                 }
             }
             i += 1;
         }
-        QueueModLog(n"DEBUG", n"EVENTS", "[QueueMod] Ignored upload lock, kept RAM/breach/cooldown intact");
     }
+    
+    // If we get here, all validation passed - command stays unlocked
 }
-
+ 
 
 // =============================================================================
 // Phase 3.3: Queue Execution on Upload Completion - v1.63 Syntax

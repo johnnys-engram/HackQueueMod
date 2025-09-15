@@ -8,7 +8,6 @@
 module JE_HackQueueMod.UI
 import JE_HackQueueMod.Logging.*
 import JE_HackQueueMod.Core.*
-import JE_HackQueueMod.Core.Catalog.*
 import JE_HackQueueMod.Helpers.*
 import JE_HackQueueMod.Events.*
 
@@ -412,24 +411,7 @@ private func FindActionTweakID(data: ref<QuickhackData>) -> TweakDBID {
     }
 
     let titleStr: String = GetLocalizedText(data.m_title);
-    
-    // NEW: Use catalog via PlayerPuppet integration with fallback
-    let playerSystem: ref<PlayerSystem> = GameInstance.GetPlayerSystem(this.m_gameInstance);
-    if IsDefined(playerSystem) {
-        let player: ref<PlayerPuppet> = playerSystem.GetLocalPlayerMainGameObject() as PlayerPuppet;
-        if IsDefined(player) {
-            let catalog: ref<NPCQuickhackCatalog> = player.GetNPCQuickhackCatalog();
-            if IsDefined(catalog) {
-                let tweakID: TweakDBID = catalog.GetTweakIDForDisplayName(titleStr);
-                
-                if TDBID.IsValid(tweakID) {
-                    QueueModLog(n"DEBUG", n"CATALOG", s"[Integration] Catalog lookup success: \(titleStr) -> \(TDBID.ToStringDEBUG(tweakID))");
-                    return tweakID;
-                }
-            }
-        }
-    }
-    
+       
     // CRITICAL: Fallback to manual mappings for safety during transition
     QueueModLog(n"DEBUG", n"CATALOG", s"[Integration] Catalog lookup failed, using manual fallback for: \(titleStr)");
     
@@ -438,15 +420,33 @@ private func FindActionTweakID(data: ref<QuickhackData>) -> TweakDBID {
     if Equals(titleStr, "Overheat") { return t"QuickHack.OverheatHack"; }
     if Equals(titleStr, "Short Circuit") { return t"QuickHack.ShortCircuitHack"; }
     if Equals(titleStr, "Synapse Burnout") { return t"QuickHack.SynapseBurnoutHack"; }
-    if Equals(titleStr, "Distract Enemies") { return t"QuickHack.SuicideHack"; }
     if Equals(titleStr, "Cyberware Malfunction") { return t"QuickHack.MalfunctionHack"; }
     if Equals(titleStr, "System Reset") { return t"QuickHack.SystemCollapseHack"; }
-    if Equals(titleStr, "Contagion") { return t"QuickHack.CommsNoiseHack"; }
     if Equals(titleStr, "Memory Wipe") { return t"QuickHack.MemoryWipeHack"; }
     if Equals(titleStr, "Weapon Glitch") { return t"QuickHack.WeaponGlitchHack"; }
     if Equals(titleStr, "Disable Cyberware") { return t"QuickHack.DisableCyberwareHack"; }
     if Equals(titleStr, "Berserk") { return t"QuickHack.BerserkHack"; }
     if Equals(titleStr, "Suicide") { return t"QuickHack.SuicideHack"; }
+
+    // Covert Hacks
+    if Equals(titleStr, "Ping") { return t"QuickHack.PingHack"; }
+    if Equals(titleStr, "Whistle") { return t"QuickHack.WhistleHack"; }
+    if Equals(titleStr, "Distract Enemies") { return t"QuickHack.DistractEnemiesHack"; }
+
+    // Control Hacks  
+    if Equals(titleStr, "Cripple Movement") { return t"QuickHack.LocomotionMalfunctionHack"; }
+    if Equals(titleStr, "Call Backup") { return t"QuickHack.CallBackupHack"; }
+    if Equals(titleStr, "Friendly Mode") { return t"QuickHack.FriendlyModeHack"; }
+    if Equals(titleStr, "Comms Noise") { return t"QuickHack.CommsNoiseHack"; }
+
+    // Damage Hacks (separated Contagion from Comms Noise)
+    if Equals(titleStr, "Contagion") { return t"QuickHack.ContagionHack"; }
+
+    // Ultimate Hacks
+    if Equals(titleStr, "Cyberpsychosis") { return t"QuickHack.MadnessHack"; }
+    if Equals(titleStr, "Madness") { return t"QuickHack.MadnessHack"; }
+    if Equals(titleStr, "Detonate Grenade") { return t"QuickHack.DetonateGrenadeHack"; }
+    if Equals(titleStr, "Brain Melt") { return t"QuickHack.BrainMeltHack"; }
     
     // FALLBACK: Check if we have the action reference directly
     if IsDefined(data.m_action) {

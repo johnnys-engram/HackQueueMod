@@ -39,7 +39,6 @@ public func QueueModLog(level: CName, category: CName, message: String) -> Void 
     let DEBUG_QUEUE: Bool = true;       // Queue operations
     let DEBUG_EVENTS: Bool = true;      // Event handling
     let DEBUG_TEST: Bool = true;         // Smoke test and validation output
-    let DEBUG_CATALOG: Bool = false;      // ⭐ ADD THIS LINE
     
     // Skip if debug disabled
     if Equals(level, n"DEBUG") && !DEBUG_QUEUE_MOD {
@@ -54,7 +53,6 @@ public func QueueModLog(level: CName, category: CName, message: String) -> Void 
         if Equals(category, n"QUEUE") && !DEBUG_QUEUE { return; }
         if Equals(category, n"EVENTS") && !DEBUG_EVENTS { return; }
         if Equals(category, n"TEST") && !DEBUG_TEST { return; }
-        if Equals(category, n"CATALOG") && !DEBUG_CATALOG { return; } // ⭐ ADD THIS LINE
     }
     
     // Format: [CATEGORY] message
