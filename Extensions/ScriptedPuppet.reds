@@ -262,13 +262,9 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
         
         // Validate action identity before execution
         let actionID: TweakDBID = TDBID.None();
-        let saExec: ref<ScriptableDeviceAction> = entry.action as ScriptableDeviceAction;
         let paExec: ref<PuppetAction> = entry.action as PuppetAction;
         
-        if IsDefined(saExec) {
-            actionID = saExec.GetObjectActionID();
-            QueueModLog(n"DEBUG", n"QUICKHACK", s"Executing ScriptableDeviceAction: \(TDBID.ToStringDEBUG(actionID))");
-        } else if IsDefined(paExec) {
+        if IsDefined(paExec) {
             actionID = paExec.GetObjectActionID();
             QueueModLog(n"DEBUG", n"QUICKHACK", s"Executing PuppetAction: \(TDBID.ToStringDEBUG(actionID))");
         }
@@ -277,40 +273,9 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
             QueueModLog(n"ERROR", n"QUICKHACK", s"[QueueMod][Exec] Action has invalid TweakDBID - skipping execution");
             return;
         }
-        
-        // PHASE 3: RAM already deducted on selection (like vanilla behavior)
-        // No need to deduct RAM again during execution
-        
-        // Note: ExecuteQueuedEntryViaUI removed - would cause infinite recursion
-        
-        // FALLBACK: Direct execution with UI feedback
+
         // CRITICAL FIX: Use ProcessRPGAction instead of OnQuickSlotCommandUsed for reliable execution
-        if IsDefined(saExec) {
-            // Ensure action targets this NPC
-            saExec.RegisterAsRequester(this.GetEntityID());
-            saExec.SetExecutor(player); // CRITICAL: Player executes, NPC receives
-            
-            // BUG 1 FIX: Lock the queue during execution to prevent race conditions
-            this.GetQueueModActionQueue().LockQueue();
-            
-            // CRITICAL FIX: Use ProcessRPGAction for reliable post-upload execution
-            // BUGFIX: Skip cost validation since RAM already deducted during queuing
-            QueueModLog(n"DEBUG", n"QUICKHACK", s"[QueueMod][Exec] Processing RPG action for target: \(GetLocalizedText(this.GetDisplayName()))");
-            
-            // Direct execution since RAM already deducted during queuing
-            saExec.ProcessRPGAction(this.GetGame());
-            
-            // Check immediately after execution
-            if this.IsDead() || StatusEffectSystem.ObjectHasStatusEffectWithTag(this, n"Dead") || 
-               StatusEffectSystem.ObjectHasStatusEffectWithTag(this, n"Unconscious") {
-                QueueModLog(n"DEBUG", n"QUICKHACK", "Target died during execution - clearing queue");
-                this.GetQueueModActionQueue().ClearQueue(this.GetGame(), this.GetEntityID());
-                // Don't try to reverse - just prevent next execution
-                return;
-            }
-            this.GetQueueModActionQueue().UnlockQueue();
-            
-        } else if IsDefined(paExec) {
+         if IsDefined(paExec) {
             // Ensure action targets this NPC
             paExec.RegisterAsRequester(this.GetEntityID());
             paExec.SetExecutor(player); // CRITICAL: Player executes, NPC receives

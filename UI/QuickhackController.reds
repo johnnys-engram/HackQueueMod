@@ -201,7 +201,6 @@ private func QueueModIsTargetUploading(data: ref<QuickhackData>) -> Bool {
 // Phase 4.3: Core ApplyQuickHack Integration - DIRECT ACCESS ONLY
 // =============================================================================
 
-// MAIN ApplyQuickHack wrapper - DIRECT ACCESS ONLY (no cache fallbacks)
 @wrapMethod(QuickhacksListGameController)
 private func ApplyQuickHack() -> Bool {
     QueueModLog(n"DEBUG", n"QUICKHACK", "*** ApplyQuickHack called ***");

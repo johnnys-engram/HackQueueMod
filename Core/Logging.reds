@@ -35,10 +35,10 @@ public func QueueModLog(level: CName, category: CName, message: String) -> Void 
     let DEBUG_QUEUE_MOD: Bool = true;    // Master debug switch
     let DEBUG_RAM: Bool = true;          // RAM operations
     let DEBUG_QUICKHACK: Bool = true;   // Quickhack activation/execution
-    let DEBUG_UI: Bool = true;          // UI operations
+    let DEBUG_UI: Bool = false;          // UI operations
     let DEBUG_QUEUE: Bool = true;       // Queue operations
-    let DEBUG_EVENTS: Bool = true;      // Event handling
-    let DEBUG_TEST: Bool = true;         // Smoke test and validation output
+    let DEBUG_EVENTS: Bool = false;      // Event handling
+    let DEBUG_TEST: Bool = false;         // Smoke test and validation output
     
     // Skip if debug disabled
     if Equals(level, n"DEBUG") && !DEBUG_QUEUE_MOD {
