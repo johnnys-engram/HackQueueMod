@@ -60,16 +60,6 @@ public func QueueModLog(level: CName, category: CName, message: String) -> Void 
     LogChannel(level, formattedMessage);
 }
 
-// Legacy function for backward compatibility
-public func QueueModLog(level: CName, message: String) -> Void {
-    QueueModLog(level, n"GENERAL", message);
-}
-
-// Convenience function for test logging
-public func QueueModTestLog(level: CName, message: String) -> Void {
-    QueueModLog(level, n"TEST", message);
-}
-
 // Version constants for mod management
 public func GetHackQueueModVersion() -> String {
     return "1.0.0";

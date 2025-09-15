@@ -8,56 +8,12 @@
 module JE_HackQueueMod.UI
 import JE_HackQueueMod.Logging.*
 import JE_HackQueueMod.Core.*
-import JE_HackQueueMod.Helpers.*
-import JE_HackQueueMod.Events.*
 
 // =============================================================================
 // QUICKHACKS LIST GAME CONTROLLER EXTENSIONS
 // =============================================================================
 
 // UI Controller Fields
-@addField(QuickhacksListGameController)
-private let m_qmPoolsRegistered: Bool;
-
-@addField(QuickhacksListGameController)
-private let m_qmRefreshScheduled: Bool;
-
-@addField(QuickhacksListGameController)
-private let m_qmControllerStored: Bool;
-
-// Phase 4: Clear Controller Cache with Proper Repopulation
-@addMethod(QuickhacksListGameController)
-public func ClearControllerCacheInternal() -> Void {
-    QueueModLog(n"DEBUG", n"UI", "[QueueMod] Clearing controller cache with repopulation");
-    
-    // Store current target for repopulation
-    let currentTarget: EntityID = this.m_lastCompiledTarget;
-    QueueModLog(n"DEBUG", n"UI", s"[QueueMod] Stored current target: \(EntityID.ToDebugString(currentTarget))");
-    
-    // Clear m_data array completely
-    ArrayClear(this.m_data);
-    QueueModLog(n"DEBUG", n"UI", "[QueueMod] Cleared m_data array");
-    
-    // Reset selected data
-    this.m_selectedData = null;
-    QueueModLog(n"DEBUG", n"UI", "[QueueMod] Reset m_selectedData");
-    
-    // Reset last compiled target (field removed - not defined)
-    // this.m_lastCompiledTarget = EntityID();
-    // QueueModLog(n"DEBUG", "[QueueMod] Reset m_lastCompiledTarget");
-    
-    // Clear list controller with force flag
-    if IsDefined(this.m_listController) {
-        this.m_listController.Clear(true);
-        QueueModLog(n"DEBUG", n"UI", "[QueueMod] Cleared list controller with force flag");
-    }
-    
-    QueueModLog(n"DEBUG", n"UI", "[QueueMod] Controller cache clearing and repopulation complete");
-}
-
-// =============================================================================
-// Phase 4.1: UI Upload Detection Methods - v1.63 Compatible
-// =============================================================================
 
 @addMethod(QuickhacksListGameController)
 private func IsQuickHackCurrentlyUploading() -> Bool {
@@ -119,17 +75,6 @@ private func IsQuickHackCurrentlyUploading() -> Bool {
 }
 
 @addMethod(QuickhacksListGameController)
-private func QM_RegisterPoolListeners() -> Void {
-    if this.m_qmPoolsRegistered {
-        return;
-    }
-    // TODO: Implement StatPool listeners when available in v1.63
-    // For now, just mark as registered to avoid repeated calls
-    this.m_qmPoolsRegistered = true;
-    QueueModLog(n"DEBUG", n"EVENTS", "[QueueMod] StatPool listeners registered (placeholder)");
-}
-
-@addMethod(QuickhacksListGameController)
 private func QueueModSelectedIsUILocked() -> Bool {
     if !IsDefined(this.m_selectedData) {
         return false;
@@ -178,23 +123,6 @@ private func QueueModIsOnCooldown(data: ref<QuickhackData>) -> Bool {
         return false;
     }
     return StatusEffectSystem.ObjectHasStatusEffect(player, data.m_cooldownTweak);
-}
-
-@addMethod(QuickhacksListGameController)
-private func QueueModIsTargetUploading(data: ref<QuickhackData>) -> Bool {
-    if !IsDefined(data) || !IsDefined(data.m_action) {
-        return false;
-    }
-    let puppetAction: ref<PuppetAction> = data.m_action as PuppetAction;
-    if IsDefined(puppetAction) {
-        let targetID: EntityID = puppetAction.GetRequesterID();
-        let targetObject: ref<GameObject> = GameInstance.FindEntityByID(this.m_gameInstance, targetID) as GameObject;
-        if IsDefined(targetObject) {
-            let uploading: Bool = GameInstance.GetStatPoolsSystem(this.m_gameInstance).IsStatPoolAdded(Cast<StatsObjectID>(targetObject.GetEntityID()), gamedataStatPoolType.QuickHackUpload);
-            return uploading;
-        }
-    }
-    return false;
 }
 
 // =============================================================================
@@ -426,21 +354,6 @@ private func FindActionTweakID(data: ref<QuickhackData>) -> TweakDBID {
     return TDBID.None();
 }
 
-@addMethod(QuickhacksListGameController)
-private func QM_ChangeRamForPlayer(delta: Float) -> Bool {
-    let ps: ref<PlayerSystem> = GameInstance.GetPlayerSystem(this.m_gameInstance);
-    let player: ref<PlayerPuppet> = IsDefined(ps) ? ps.GetLocalPlayerMainGameObject() as PlayerPuppet : null;
-    if !IsDefined(player) { return false; }
-    let sps: ref<StatPoolsSystem> = GameInstance.GetStatPoolsSystem(this.m_gameInstance);
-    let oid: StatsObjectID = Cast<StatsObjectID>(player.GetEntityID());
-    sps.RequestChangingStatPoolValue(oid, gamedataStatPoolType.Memory, delta, player, false);
-    return true;
-}
-
-// =============================================================================
-// Phase 4.4: UI Support Methods
-// =============================================================================
-
 // Cooldown application for queued actions
 @addMethod(QuickhacksListGameController)
 private func ApplyQueueModCooldownWithData(data: ref<QuickhackData>) -> Void {
@@ -466,8 +379,6 @@ private func ApplyQueueModCooldownWithData(data: ref<QuickhackData>) -> Void {
             }
             i += 1;
         }
- 
-        this.RegisterCooldownStatPoolUpdate();
     }
 }
 
@@ -487,45 +398,4 @@ private func QM_FireQueueEvent(eventType: CName, data: ref<QuickhackData>) -> Vo
     
     // Also trigger immediate UI refresh
     // Note: UI refresh now handled by QuickhackModule.RequestRefreshQuickhackMenu
-}
-
-// Store controller reference on player for UI access - using OnInitialize
-@wrapMethod(QuickhacksListGameController)
-protected cb func OnInitialize() -> Bool {
-    let result: Bool = wrappedMethod();
-    let player: ref<PlayerPuppet> = GameInstance.GetPlayerSystem(this.m_gameInstance).GetLocalPlayerMainGameObject() as PlayerPuppet;
-    if IsDefined(player) {
-        player.SetQuickhacksListGameController(this);
-        this.m_qmControllerStored = true;
-        QueueModLog(n"DEBUG", n"UI", "[QueueMod] Controller reference stored on player via OnInitialize");
-    }
-    return result;
-}
-
-@addMethod(QuickhacksListGameController)
-private func TestActionReferencePreservation(data: ref<QuickhackData>) -> ref<DeviceAction> {
-    if !IsDefined(data) {
-        QueueModLog(n"DEBUG", n"QUEUE", "[TEST] QuickhackData is null");
-        return null;
-    }
-    
-    QueueModLog(n"DEBUG", n"QUEUE", s"[TEST] Testing action preservation for: \(GetLocalizedText(data.m_title))");
-    
-    // Test 1: Check if m_action exists and is valid
-    if IsDefined(data.m_action) {
-        QueueModLog(n"DEBUG", n"QUEUE", s"[TEST] ✓ m_action exists: \(data.m_action.GetClassName())");
-        
-        // Test 2: Check if it has a valid TweakDBID
-        let actionID: TweakDBID = data.m_action.GetObjectActionID();
-        if TDBID.IsValid(actionID) {
-            QueueModLog(n"DEBUG", n"QUEUE", s"[TEST] ✓ Action ID valid: \(TDBID.ToStringDEBUG(actionID))");
-            return data.m_action;
-        } else {
-            QueueModLog(n"DEBUG", n"QUEUE", "[TEST] ✗ Action ID invalid");
-        }
-    } else {
-        QueueModLog(n"DEBUG", n"QUEUE", "[TEST] ✗ m_action is null - data loss confirmed");
-    }
-    
-    return null;
 }

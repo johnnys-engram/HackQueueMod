@@ -1,5 +1,5 @@
 // =============================================================================
-// HackQueueMod - Core Queue System
+// HackQueueMod - Core Queue System (Consolidated)
 // Creator: johnnys-engram
 // Target: Cyberpunk 2077 v1.63
 // Framework: redscript 0.5.14
@@ -7,7 +7,17 @@
 
 module JE_HackQueueMod.Core
 import JE_HackQueueMod.Logging.*
-import JE_HackQueueMod.Helpers.*
+
+// =============================================================================
+// EVENT CLASSES FOR QUEUE MANAGEMENT
+// =============================================================================
+
+// Queue Event for State Synchronization (moved from QueueHelper)
+public class QueueModEvent extends Event {
+    public let eventType: CName;
+    public let quickhackData: ref<QuickhackData>;
+    public let timestamp: Float;
+}
 
 // =============================================================================
 // CORE QUEUE DATA STRUCTURES
@@ -33,6 +43,52 @@ public func CreateQueueModEntry(action: ref<DeviceAction>, key: String, cost: In
 }
 
 // =============================================================================
+// HELPER CLASSES FOR QUEUE MANAGEMENT (moved from QueueHelper)
+// =============================================================================
+
+// Core helper with v1.63-compatible patterns
+public class QueueModHelper {
+
+    public func PutInQuickHackQueueWithKey(action: ref<DeviceAction>, key: String) -> Bool {
+        QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod] *** QUEUE SYSTEM WITH KEY ACTIVATED *** key=\(key)");
+        if !IsDefined(action) {
+            QueueModLog(n"DEBUG", n"QUEUE", "No action provided to queue");
+            return false;
+        }
+
+        QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod] Attempting to queue action: \(action.GetClassName()) with key=\(key)");
+
+        // Prefer PuppetAction (NPC) for key-based queuing
+        let pa: ref<PuppetAction> = action as PuppetAction;
+        if IsDefined(pa) {
+            let targetID: EntityID = pa.GetRequesterID();
+            let gameInstance: GameInstance = pa.GetExecutor().GetGame();
+            let targetObject: ref<GameObject> = GameInstance.FindEntityByID(gameInstance, targetID) as GameObject;
+            let puppet: ref<ScriptedPuppet> = targetObject as ScriptedPuppet;
+            if IsDefined(puppet) {
+                let queue: ref<QueueModActionQueue> = puppet.GetQueueModActionQueue();
+                if IsDefined(queue) {
+                    // FIX: Handle validation failure properly
+                    if !queue.ValidateQueueIntegrity() {
+                        QueueModLog(n"ERROR", n"QUEUE", "[QueueMod] Queue validation failed - aborting queue operation");
+                        return false; // Don't proceed with corrupted queue
+                    }
+                    QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod][Queue] EnqueueWithKey: NPC=\(GetLocalizedText(puppet.GetDisplayName())) key=\(key)");
+                    let wasQueued: Bool = queue.PutActionInQueueWithKey(action, key);
+                    
+                    return wasQueued;
+                }
+            }
+            QueueModLog(n"DEBUG", n"QUEUE", "Puppet has no queue");
+            return false;
+        }
+
+        QueueModLog(n"DEBUG", n"QUEUE", "Unknown action type - cannot queue");
+        return false;
+    }
+}
+
+// =============================================================================
 // CORE QUEUE SYSTEM CLASSES
 // =============================================================================
 
@@ -49,19 +105,6 @@ public class QueueModActionQueue {
     private func CalculateMaxQueueSize() -> Int32 {
         // Base queue size - TODO: implement dynamic sizing based on perks/cyberware
         return 3;
-    }
-
-    public func PutActionInQueue(action: ref<DeviceAction>) -> Bool {
-        if !IsDefined(action) || this.m_isQueueLocked || ArraySize(this.m_queueEntries) >= this.m_maxQueueSize {
-            return false;
-        }
-        
-        let sa: ref<ScriptableDeviceAction> = action as ScriptableDeviceAction;
-        if IsDefined(sa) {
-            let autoKey: String = s"auto::\(TDBID.ToStringDEBUG(sa.GetObjectActionID()))::\(GameInstance.GetTimeSystem(GetGameInstance()).GetGameTimeStamp())";
-            return this.PutActionInQueueWithKey(action, autoKey);
-        }
-        return false;
     }
 
     public func PutActionInQueueWithKey(action: ref<DeviceAction>, key: String) -> Bool {
@@ -160,23 +203,8 @@ public class QueueModActionQueue {
         return entry;
     }
 
-    public func PopActionInQueue() -> ref<DeviceAction> {
-        let entry: ref<QueueModEntry> = this.PopNextEntry();
-        if IsDefined(entry) && Equals(entry.entryType, 0) && IsDefined(entry.action) {
-            return entry.action;
-        }
-        return null;
-    }
-
     public func GetQueueSize() -> Int32 {
         return ArraySize(this.m_queueEntries);
-    }
-    
-    public func GetQueueEntry(index: Int32) -> ref<QueueModEntry> {
-        if index >= 0 && index < ArraySize(this.m_queueEntries) {
-            return this.m_queueEntries[index];
-        }
-        return null;
     }
 
     public func ClearQueue() -> Void {
@@ -301,33 +329,4 @@ public class QueueModActionQueue {
         let cost: Int32 = action.GetCost();
         return Max(cost, 0); // Safe fallback
     }
-    
-    private func QM_ChangeRam(game: GameInstance, delta: Float) -> Bool {
-        // Note: GameInstance is always valid in this context
-        
-        // v1.63-safe: adjust Memory pool directly on player
-        let player: ref<PlayerPuppet> = this.QM_GetPlayer(game);
-        if !IsDefined(player) {
-            QueueModLog(n"ERROR", n"RAM", "[QueueMod] Cannot change RAM - player is null");
-            return false;
-        }
-        
-        let sps: ref<StatPoolsSystem> = GameInstance.GetStatPoolsSystem(game);
-        if !IsDefined(sps) {
-            QueueModLog(n"ERROR", n"RAM", "[QueueMod] Cannot change RAM - StatPoolsSystem is null");
-            return false;
-        }
-        
-        let oid: StatsObjectID = Cast<StatsObjectID>(player.GetEntityID());
-        // Note: StatsObjectID validation removed for v1.63 compatibility
-        
-        // Subtract when delta < 0, add back when delta > 0
-        sps.RequestChangingStatPoolValue(oid, gamedataStatPoolType.Memory, delta, player, false);
-        QueueModLog(n"DEBUG", n"RAM", s"Changed RAM by: \(delta) (new total should be updated)");
-        return true;
-    }
-    
-    // Note: GC registration removed - placeholder code provided no actual protection
-    
-    // Note: Speed modifier system removed - was modifying RAM instead of upload speed
 }

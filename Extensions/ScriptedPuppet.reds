@@ -8,7 +8,6 @@
 module JE_HackQueueMod.Extensions.Puppet
 import JE_HackQueueMod.Logging.*
 import JE_HackQueueMod.Core.*
-import JE_HackQueueMod.Helpers.*
 
 // =============================================================================
 // SCRIPTED PUPPET EXTENSIONS - MOST CRITICAL COMPONENT
@@ -247,7 +246,6 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
     // PHASE 1: Validate target is still alive and valid (enhanced death check)
     if !IsDefined(this) || this.IsDead() || StatusEffectSystem.ObjectHasStatusEffectWithTag(this, n"Dead") || StatusEffectSystem.ObjectHasStatusEffectWithTag(this, n"Unconscious") {
         QueueModLog(n"DEBUG", n"QUICKHACK", "Target invalid/dead/unconscious - clearing queue");
-        this.NotifyPlayerQueueCanceled("Target eliminated, queued quickhacks canceled.");
         let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
         if IsDefined(queue) {
             queue.ClearQueue(this.GetGame(), this.GetEntityID());
@@ -295,19 +293,13 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
             
             // Direct execution since RAM already deducted during queuing
             let originalRamCost: Int32 = paExec.GetCost(); // This will be the TweakDB cost
-            QueueModLog(n"DEBUG", n"RAM", s"[QueueMod] Will refund \(originalRamCost) after ProcessRPGAction");
 
-            // In ExecuteQueuedEntry, around the ProcessRPGAction call:
-            let ramBefore: Float = GameInstance.GetStatPoolsSystem(this.GetGame()).GetStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Memory, false);
-            paExec.ProcessRPGAction(this.GetGame());
-            let ramAfter: Float = GameInstance.GetStatPoolsSystem(this.GetGame()).GetStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Memory, false);
-
-            QueueModLog(n"DEBUG", n"RAM", s"[QueueMod] ProcessRPGAction impact: before=\(ramBefore), after=\(ramAfter), delta=\(ramAfter - ramBefore)");
+             paExec.ProcessRPGAction(this.GetGame());
 
             // Immediately refund the double-deduction
             if originalRamCost > 0 {
                 this.QM_RefundRAM(originalRamCost);
-                QueueModLog(n"DEBUG", n"RAM", s"[QueueMod] Refunded double-deducted RAM: \(originalRamCost)");
+                QueueModLog(n"DEBUG", n"RAM", s"[QueueMod] Refunded ProcessRPGAction RAM: \(originalRamCost)");
             }
 
             // Check immediately after execution
@@ -323,53 +315,10 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
         } else {
             QueueModLog(n"DEBUG", n"QUICKHACK", s"[QueueMod][Exec] Unknown action type: \(entry.action.GetClassName())");
         }
-        
-        // PHASE 3: Note: Cost restoration not needed since SetCost not available in v1.63
-        
+              
     } else {
         QueueModLog(n"ERROR", n"QUEUE", s"[QueueMod] Invalid entry type: \(entry.entryType)");
     }
-}
-
-@addMethod(ScriptedPuppet)
-private func UpdateQueueHUDOverlay() -> Void {
-    let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
-    if !IsDefined(queue) {
-        return;
-    }
-    
-    let queueSize: Int32 = queue.GetQueueSize();
-    if queueSize > 0 {
-        // Show queue indicator on target
-        QueueModLog(n"DEBUG", n"UI", s"[QueueMod][HUD] Target \(GetLocalizedText(this.GetDisplayName())) has \(queueSize) queued hacks");
-        
-        // TODO: Add visual HUD overlay here
-        // This would integrate with the game's HUD system to show:
-        // - Small stack icons near enemy health bar
-        // - Progress bar showing upload progress
-        // - Queue count indicator
-    }
-}
-
-// Player-Friendly Error Handling
-@addMethod(ScriptedPuppet)
-private func NotifyPlayerQueueCanceled(message: String) -> Void {
-    // Show notification to player
-    let playerSystem: ref<PlayerSystem> = GameInstance.GetPlayerSystem(this.GetGame());
-    if IsDefined(playerSystem) {
-        let player: ref<PlayerPuppet> = playerSystem.GetLocalPlayerMainGameObject() as PlayerPuppet;
-        if IsDefined(player) {
-            // TODO: Implement proper notification system
-            // This would show a UI notification to the player
-            QueueModLog(n"DEBUG", n"UI", s"[QueueMod][Notification] \(message)");
-        }
-    }
-}
-
-@addMethod(ScriptedPuppet)
-private func NotifyPlayerRAMRefunded(amount: Int32) -> Void {
-    let message: String = s"RAM refunded: \(amount) units";
-    this.NotifyPlayerQueueCanceled(message);
 }
 
 @addMethod(ScriptedPuppet)
@@ -394,67 +343,6 @@ private final func QM_RefundRAM(amount: Int32) -> Bool {
     return true;
 }
 
-@addMethod(ScriptedPuppet)
-private func QM_MapQuickhackToSE(tweak: TweakDBID) -> TweakDBID {
-    // Map known quickhacks -> their status effects (v1.63 names)
-    // Fallback: return TDBID.None() if unknown (so we can bail safely)
-    let s: String = TDBID.ToStringDEBUG(tweak);
-    // Common ones used in your logs/tests:
-    if StrContains(s, "QuickHack.OverheatHack") { return t"StatusEffect.Overheat"; }
-    if StrContains(s, "QuickHack.BlindHack")    { return t"StatusEffect.Blind"; }
-    if StrContains(s, "QuickHack.ShortCircuitHack") { return t"StatusEffect.ShortCircuit"; }
-    if StrContains(s, "QuickHack.SynapseBurnoutHack") { return t"StatusEffect.SynapseBurnout"; }
-    if StrContains(s, "QuickHack.CommsNoiseHack") { return t"StatusEffect.Contagion"; }
-    if StrContains(s, "QuickHack.MalfunctionHack") { return t"StatusEffect.CyberwareMalfunction"; }
-    if StrContains(s, "QuickHack.SystemCollapseHack") { return t"StatusEffect.SystemReset"; }
-    if StrContains(s, "QuickHack.MemoryWipeHack") { return t"StatusEffect.MemoryWipe"; }
-    if StrContains(s, "QuickHack.WeaponGlitchHack") { return t"StatusEffect.WeaponMalfunction"; }
-    if StrContains(s, "QuickHack.DisableCyberwareHack") { return t"StatusEffect.DisableCyberware"; }
-    // Add more as needed
-    return TDBID.None();
-}
-
-@addMethod(ScriptedPuppet)
-private func QM_ApplyQuickhackIntent(tweak: TweakDBID) -> Bool {
-    // Try SE-based application first (works for Overheat/Reboot Optics/etc.)
-    let seID: TweakDBID = this.QM_MapQuickhackToSE(tweak);
-    if TDBID.IsValid(seID) {
-        StatusEffectHelper.ApplyStatusEffect(this, seID);
-        QueueModLog(n"DEBUG", n"QUICKHACK", s"[QueueMod][Exec] Applied SE for quickhack: \(TDBID.ToStringDEBUG(seID))");
-        return true;
-    }
-    QueueModLog(n"DEBUG", n"QUICKHACK", "No SE mapping for quickhack; skipping");
-    return false;
-}
-
-// PHASE 1: Death event listener for queue cancellation (v1.63 compatible)
-@addMethod(ScriptedPuppet)
-protected cb func OnQueueDeathEvent(evt: ref<Event>) -> Bool {
-    // Check if this is actually a death-related event
-    let eventType: CName = evt.GetClassName();
-    QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod] Event received: \(ToString(eventType)) on \(GetLocalizedText(this.GetDisplayName()))");
-    
-    // Check for death via status effect or IsDead()
-    let isDead: Bool = this.IsDead() || StatusEffectSystem.ObjectHasStatusEffectWithTag(this, n"Dead");
-    if isDead {
-        QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod] Death confirmed - clearing queue");
-        let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
-        if IsDefined(queue) {
-            queue.ClearQueue(this.GetGame(), this.GetEntityID());  // Refunds all queued RAM
-            this.NotifyPlayerQueueCanceled("Target died - queued quickhacks canceled and RAM refunded.");
-        }
-    }
-    return true;
-}
-
-// FIX 1: Death Registration - Register death handler in lifecycle
-@addMethod(ScriptedPuppet)
-protected func OnGameAttached() -> Void {
-    // Note: RegisterListener API limited in v1.63, using manual event checking instead
-    // Death events will be checked in existing methods (OnUploadProgressStateChanged, ExecuteQueuedEntry)
-    QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod] Death event checking enabled for \(GetLocalizedText(this.GetDisplayName()))");
-}
-
 // EVENT-DRIVEN CLEANUP: Proper status effect listener for death/unconscious
 @wrapMethod(ScriptedPuppet)
 protected cb func OnStatusEffectApplied(evt: ref<ApplyStatusEffectEvent>) -> Bool {
@@ -476,44 +364,4 @@ protected cb func OnStatusEffectApplied(evt: ref<ApplyStatusEffectEvent>) -> Boo
         }
     }
     return result;
-}
-
-// ✅ SIMPLIFIED: Event Handlers for Sequenced Refresh System  
-// Note: Custom event types moved to direct QuickhackQueueHelper calls to avoid linter issues
-@addMethod(ScriptedPuppet)
-protected cb func OnQueueModCommandGenEvent(evt: ref<Event>) -> Bool {
-    QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod] Command generation event received for entity: \(ToString(this.GetEntityID()))");
-    return true;
-}
-
-@addMethod(ScriptedPuppet)
-protected cb func OnQueueModValidationEvent(evt: ref<Event>) -> Bool {
-    QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod] Validation event received for entity: \(ToString(this.GetEntityID()))");
-    
-    // ✅ SIMPLIFIED: Basic validation logging
-    let gameInstance: GameInstance = this.GetGame();
-    let targetID: EntityID = this.GetEntityID();
-    
-    // Get the player and controller for validation
-    let playerSystem: ref<PlayerSystem> = GameInstance.GetPlayerSystem(gameInstance);
-    let player: ref<PlayerPuppet> = playerSystem.GetLocalPlayerMainGameObject() as PlayerPuppet;
-    if IsDefined(player) {
-        let controller: ref<QuickhacksListGameController> = player.GetQuickhacksListGameController();
-        if IsDefined(controller) {
-            // Check if the controller has fresh data for this target
-            let hasData: Bool = ArraySize(controller.m_data) > 0;
-            let correctTarget: Bool = EntityID.IsDefined(controller.m_lastCompiledTarget) && Equals(controller.m_lastCompiledTarget, targetID);
-            
-            QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod] Validation results - Has data: \(hasData), Correct target: \(correctTarget)");
-            
-            if !hasData || !correctTarget {
-                QueueModLog(n"DEBUG", n"EVENTS", "Validation failed - refresh may need retry");
-            } else {
-                QueueModLog(n"DEBUG", n"EVENTS", "Validation passed - refresh successful");
-            }
-        }
-    }
-    
-    QueueModLog(n"DEBUG", n"EVENTS", "Validation event processing complete");
-    return true;
 }
