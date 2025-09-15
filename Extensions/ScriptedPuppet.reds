@@ -291,9 +291,6 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
             // BUG 1 FIX: Lock the queue during execution to prevent race conditions
             this.GetQueueModActionQueue().LockQueue();
             
-            // MISSING UI EFFECT: Add UI feedback BEFORE execution
-            this.TriggerQuickhackUIFeedback(saExec);
-            
             // CRITICAL FIX: Use ProcessRPGAction for reliable post-upload execution
             // BUGFIX: Skip cost validation since RAM already deducted during queuing
             QueueModLog(n"DEBUG", n"QUICKHACK", s"[QueueMod][Exec] Processing RPG action for target: \(GetLocalizedText(this.GetDisplayName()))");
@@ -318,9 +315,6 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
             
             // BUG 1 FIX: Lock the queue during execution to prevent race conditions
             this.GetQueueModActionQueue().LockQueue();
-            
-            // MISSING UI EFFECT: Add UI feedback BEFORE execution
-            this.TriggerQuickhackUIFeedback(paExec);
             
             // CRITICAL FIX: Use ProcessRPGAction for reliable post-upload execution
             // BUGFIX: Skip cost validation since RAM already deducted during queuing
@@ -491,8 +485,6 @@ protected cb func OnStatusEffectApplied(evt: ref<ApplyStatusEffectEvent>) -> Boo
 @addMethod(ScriptedPuppet)
 protected cb func OnQueueModCommandGenEvent(evt: ref<Event>) -> Bool {
     QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod] Command generation event received for entity: \(ToString(this.GetEntityID()))");
-    
-    QueueModLog(n"DEBUG", n"EVENTS", "Command generation event processing complete");
     return true;
 }
 
@@ -526,27 +518,4 @@ protected cb func OnQueueModValidationEvent(evt: ref<Event>) -> Bool {
     
     QueueModLog(n"DEBUG", n"EVENTS", "Validation event processing complete");
     return true;
-}
-
-// MISSING UI EFFECT: Trigger vanilla UI feedback for queued quickhacks (v1.63 compatible)
-@addMethod(ScriptedPuppet)
-private func TriggerQuickhackUIFeedback(action: ref<DeviceAction>) -> Void {
-    let player: ref<PlayerPuppet> = GameInstance.GetPlayerSystem(this.GetGame()).GetLocalPlayerMainGameObject() as PlayerPuppet;
-    if !IsDefined(player) { 
-        QueueModLog(n"DEBUG", n"UI", "No player found for UI feedback");
-        return; 
-    }
-    
-    // Use actual quickhack visual effects (v1.63 compatible)
-    GameObject.PlaySoundEvent(this, n"ui_quickhack_upload_complete");
-    // Note: StartEffectEvent not available on ScriptedPuppet in v1.63
-    
-    // Audio cue (v1.63 compatible)
-    let audioSystem: ref<AudioSystem> = GameInstance.GetAudioSystem(this.GetGame());
-    if IsDefined(audioSystem) {
-        audioSystem.Play(n"ui_quickhack_execute");
-        QueueModLog(n"DEBUG", n"UI", "Played quickhack activation sound");
-    }
-    
-    QueueModLog(n"DEBUG", n"UI", "UI feedback triggered for queued quickhack (v1.63 compatible)");
 }
