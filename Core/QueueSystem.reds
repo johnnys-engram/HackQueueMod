@@ -44,7 +44,6 @@ public class QueueModActionQueue {
     public func Initialize() -> Void {
         this.m_isQueueLocked = false;
         this.m_maxQueueSize = this.CalculateMaxQueueSize();
-        QueueModLog(n"DEBUG", n"QUEUE", s"Queue initialized with max size: \(this.m_maxQueueSize)");
     }
     
     private func CalculateMaxQueueSize() -> Int32 {

@@ -306,7 +306,7 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
 
             // Immediately refund the double-deduction
             if originalRamCost > 0 {
-                this.QM_RefundRam(originalRamCost);
+                this.QM_RefundRAM(originalRamCost);
                 QueueModLog(n"DEBUG", n"RAM", s"[QueueMod] Refunded double-deducted RAM: \(originalRamCost)");
             }
 
@@ -373,24 +373,25 @@ private func NotifyPlayerRAMRefunded(amount: Int32) -> Void {
 }
 
 @addMethod(ScriptedPuppet)
-private func QM_RefundRam(amount: Int32) -> Void {
-    let ps: ref<PlayerSystem> = GameInstance.GetPlayerSystem(this.GetGame());
-    let player: ref<PlayerPuppet> = IsDefined(ps) ? ps.GetLocalPlayerMainGameObject() as PlayerPuppet : null;
-    if !IsDefined(player) || amount <= 0 { return; }
+private final func QM_RefundRAM(amount: Int32) -> Bool {
+    let player: ref<PlayerPuppet> = GameInstance.GetPlayerSystem(this.GetGame()).GetLocalPlayerControlledGameObject() as PlayerPuppet;
+    if !IsDefined(player) {
+        return false;
+    }
     
     let sps: ref<StatPoolsSystem> = GameInstance.GetStatPoolsSystem(this.GetGame());
+    let oid: StatsObjectID = Cast<StatsObjectID>(player.GetEntityID());
     
-    // Check RAM before refund
-    let ramBefore: Float = sps.GetStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Memory, false);
+    if !sps.IsStatPoolAdded(oid, gamedataStatPoolType.Memory) {
+        return false;
+    }
     
-    // USE EXACT SAME PATTERN AS WORKING DEDUCTION
-    let amountAsFloat: Float = Cast<Float>(amount);  // Positive for refund
-    sps.RequestChangingStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Memory, amountAsFloat, player, false);
+    let refundAmount: Float = Cast<Float>(amount);
     
-    // Check RAM after refund
-    let ramAfter: Float = sps.GetStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Memory, false);
+    // CORRECT v1.63 signature: (oid, poolType, value, instigator, useOldValue, isPercentage)
+    sps.RequestChangingStatPoolValue(oid, gamedataStatPoolType.Memory, refundAmount, player, true, false);
     
-    QueueModLog(n"DEBUG", n"RAM", s"[QueueMod] Refund: before=\(ramBefore), after=\(ramAfter), delta=\(ramAfter - ramBefore)");
+    return true;
 }
 
 @addMethod(ScriptedPuppet)
