@@ -68,9 +68,6 @@ public func ClearControllerCacheInternal() -> Void {
 public func RepopulateWithFreshData(targetID: EntityID) -> Void {
     QueueModLog(n"DEBUG", n"UI", s"[QueueMod] Repopulating with fresh data for: \(EntityID.ToDebugString(targetID))");
     
-    // Force fresh command generation
-    QuickhackQueueHelper.ForceFreshCommandGeneration(this.m_gameInstance, targetID);
-    
     QueueModLog(n"DEBUG", n"UI", "[QueueMod] Fresh data repopulation complete");
 }
 
@@ -250,49 +247,48 @@ private func ApplyQuickHack() -> Bool {
         return wrappedMethod();
     }
 
-    // RAM Deduction - IMMEDIATE on selection (like vanilla behavior)
-    let playerSystem: ref<PlayerSystem> = GameInstance.GetPlayerSystem(this.m_gameInstance);
-    if !IsDefined(playerSystem) {
-        QueueModLog(n"ERROR", n"QUICKHACK", "[QueueMod] Cannot get PlayerSystem - executing normally");
-        return wrappedMethod();
-    }
-    
-    let player: ref<PlayerPuppet> = playerSystem.GetLocalPlayerMainGameObject() as PlayerPuppet;
-    if !IsDefined(player) {
-        QueueModLog(n"ERROR", n"QUICKHACK", "[QueueMod] Cannot get player - executing normally");
-        return wrappedMethod();
-    }
-    
-    if this.m_selectedData.m_cost > 0 {
-        let sps: ref<StatPoolsSystem> = GameInstance.GetStatPoolsSystem(this.m_gameInstance);
-        if !IsDefined(sps) {
-            QueueModLog(n"ERROR", n"RAM", "[QueueMod] Cannot get StatPoolsSystem - executing normally");
-            return wrappedMethod();
-        }
-        
-        let freeRam: Float = sps.GetStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Memory, false);
-        if Cast<Float>(this.m_selectedData.m_cost) > freeRam {
-            QueueModLog(n"ERROR", n"RAM", s"[QueueMod] Insufficient RAM for \(actionName): \(this.m_selectedData.m_cost) > \(freeRam)");
-            return false;
-        }
-        sps.RequestChangingStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Memory, -Cast<Float>(this.m_selectedData.m_cost), player, false);
-        QueueModLog(n"DEBUG", n"RAM", s"RAM deducted for quickhack: \(this.m_selectedData.m_cost)");
-    }
-
-    // Check if we should queue AFTER RAM deduction
+    // Check if we should queue FIRST, before touching RAM
     let shouldQueue: Bool = this.IsQuickHackCurrentlyUploading();
     QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod] Should queue: \(shouldQueue)");
 
-    // Additional debug info for upload detection
-    QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod][Debug] Upload detection details - UI lock: \(this.QueueModDetectUILock())");
-    
-    // Show target info for debugging
-    if IsDefined(this.m_selectedData) {
-        let targetID: EntityID = this.m_selectedData.m_actionOwner;
-        QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod][Debug] Target ID: \(ToString(targetID))");
-    }
-
     if shouldQueue {
+        // Only deduct RAM if we're actually going to queue
+        let playerSystem: ref<PlayerSystem> = GameInstance.GetPlayerSystem(this.m_gameInstance);
+        if !IsDefined(playerSystem) {
+            QueueModLog(n"ERROR", n"QUICKHACK", "[QueueMod] Cannot get PlayerSystem - executing normally");
+            return wrappedMethod();
+        }
+        
+        let player: ref<PlayerPuppet> = playerSystem.GetLocalPlayerMainGameObject() as PlayerPuppet;
+        if !IsDefined(player) {
+            QueueModLog(n"ERROR", n"QUICKHACK", "[QueueMod] Cannot get player - executing normally");
+            return wrappedMethod();
+        }
+        
+        // SAFER VERSION - separate the casting and negation:
+        if this.m_selectedData.m_cost > 0 {
+            let sps: ref<StatPoolsSystem> = GameInstance.GetStatPoolsSystem(this.m_gameInstance);
+            if !IsDefined(sps) {
+                QueueModLog(n"ERROR", n"RAM", "[QueueMod] Cannot get StatPoolsSystem - executing normally");
+                return wrappedMethod();
+            }
+            
+            let freeRam: Float = sps.GetStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Memory, false);
+            if Cast<Float>(this.m_selectedData.m_cost) > freeRam {
+                QueueModLog(n"ERROR", n"RAM", s"[QueueMod] Insufficient RAM for \(actionName): \(this.m_selectedData.m_cost) > \(freeRam) - executing normally");
+                return wrappedMethod();
+            }
+            
+            // SAFE CASTING: Convert to Float first, then negate
+            let costAsFloat: Float = Cast<Float>(this.m_selectedData.m_cost);
+            let costNegative: Float = -costAsFloat;
+            
+            // Now use the properly cast negative value
+            sps.RequestChangingStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Memory, costNegative, player, false);
+            QueueModLog(n"DEBUG", n"RAM", s"RAM deducted for queued quickhack: \(this.m_selectedData.m_cost)");
+            this.m_selectedData.m_cost = 0;  // Zero out cost so ProcessRPGAction doesn't deduct again
+        }
+
         // CRITICAL FIX: Try to use the original action first, fallback to reconstruction
         let actionToQueue: ref<DeviceAction> = null;
         
@@ -342,25 +338,18 @@ private func ApplyQuickHack() -> Bool {
                 
                 // Fire QueueEvent for state synchronization
                 this.QM_FireQueueEvent(n"ItemAdded", this.m_selectedData);
-                
-                // ✅ ADD THIS: Force refresh UI to show new state
-                QuickhackQueueHelper.ForceQuickhackUIRefresh(this.m_gameInstance, targetID);
-                QueueModLog(n"DEBUG", n"UI", "[QueueMod] Action queued, UI force refreshed");
                 return true;
             } else {
                 QueueModLog(n"ERROR", n"QUEUE", s"[QueueMod] Failed to queue action: \(actionName)");
+                return false;
             }
         } else {
             QueueModLog(n"ERROR", n"QUEUE", s"[QueueMod] Cannot queue - no valid action available");
+            return false;
         }
-    }
-
-    // CRITICAL FIX: Don't store intents for non-queued hacks at all
-    // This prevents intent pollution that causes double execution
-    // Intents should only be stored when we actually want to queue something
-    if !shouldQueue {
-        // For non-queued hacks, execute normally (RAM already deducted above)
-        QueueModLog(n"DEBUG", n"QUICKHACK", "Executing non-queued hack normally (RAM already deducted)");
+    } else {
+        // For non-queued hacks, execute normally - let vanilla handle RAM deduction
+        QueueModLog(n"DEBUG", n"QUICKHACK", "Executing non-queued hack normally (vanilla handles RAM)");
         return wrappedMethod();
     }
     

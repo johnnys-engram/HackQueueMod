@@ -348,9 +348,6 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
     } else {
         QueueModLog(n"ERROR", n"QUEUE", s"[QueueMod] Invalid entry type: \(entry.entryType)");
     }
-
-    // ✅ ADD THIS: Force refresh after execution
-    QuickhackQueueHelper.ForceQuickhackUIRefresh(this.GetGame(), this.GetEntityID());
 }
 
 @addMethod(ScriptedPuppet)
@@ -495,21 +492,7 @@ protected cb func OnStatusEffectApplied(evt: ref<ApplyStatusEffectEvent>) -> Boo
 protected cb func OnQueueModCommandGenEvent(evt: ref<Event>) -> Bool {
     QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod] Command generation event received for entity: \(ToString(this.GetEntityID()))");
     
-    // Force fresh command generation with injection
-    QuickhackQueueHelper.ForceFreshCommandGeneration(this.GetGame(), this.GetEntityID());
-    
     QueueModLog(n"DEBUG", n"EVENTS", "Command generation event processing complete");
-    return true;
-}
-
-@addMethod(ScriptedPuppet)
-protected cb func OnQueueModCacheEvent(evt: ref<Event>) -> Bool {
-    QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod] Cache event received for entity: \(ToString(this.GetEntityID()))");
-    
-    // Clear controller cache with repopulation
-    QuickhackQueueHelper.ClearControllerCache(this.GetGame(), this.GetEntityID());
-    
-    QueueModLog(n"DEBUG", n"EVENTS", "Cache event processing complete");
     return true;
 }
 

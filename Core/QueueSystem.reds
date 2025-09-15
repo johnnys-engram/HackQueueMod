@@ -208,9 +208,6 @@ public class QueueModActionQueue {
 
     public func ClearQueue(gameInstance: GameInstance, targetID: EntityID) -> Void {
         this.ClearQueue(); // Call the base clear method
-        
-        // ✅ ADD THIS: Force refresh after clearing
-        QuickhackQueueHelper.ForceQuickhackUIRefresh(gameInstance, targetID);
     }
 
     public func LockQueue() -> Void {
