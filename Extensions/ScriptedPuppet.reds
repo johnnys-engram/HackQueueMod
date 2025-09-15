@@ -83,7 +83,9 @@ private func TranslateChoicesIntoQuickSlotCommands(
             }
             i += 1;
         }
-        
+ 
+        QuickhackModule.RequestRefreshQuickhackMenu(this.GetGame(), this.GetEntityID());     
+          
         // Sync PuppetAction states (critical vanilla requirement)
         let j: Int32 = 0;
         while j < ArraySize(commands) {
