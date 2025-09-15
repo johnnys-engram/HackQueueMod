@@ -263,15 +263,6 @@ private func ApplyQuickHack() -> Bool {
                 QueueModLog(n"ERROR", n"RAM", s"[QueueMod] Insufficient RAM for \(actionName): \(this.m_selectedData.m_cost) > \(freeRam) - executing normally");
                 return wrappedMethod();
             }
-            
-            // SAFE CASTING: Convert to Float first, then negate
-            let costAsFloat: Float = Cast<Float>(this.m_selectedData.m_cost);
-            let costNegative: Float = -costAsFloat;
-            
-            // Now use the properly cast negative value
-            sps.RequestChangingStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Memory, costNegative, player, false);
-            QueueModLog(n"DEBUG", n"RAM", s"RAM deducted for queued quickhack: \(this.m_selectedData.m_cost)");
-            this.m_selectedData.m_cost = 0;  // Zero out cost so ProcessRPGAction doesn't deduct again
         }
 
         // CRITICAL FIX: Try to use the original action first, fallback to reconstruction

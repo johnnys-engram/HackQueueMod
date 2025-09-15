@@ -294,8 +294,22 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
             QueueModLog(n"DEBUG", n"QUICKHACK", s"[QueueMod][Exec] Processing PuppetAction RPG for target: \(GetLocalizedText(this.GetDisplayName()))");
             
             // Direct execution since RAM already deducted during queuing
+            let originalRamCost: Int32 = paExec.GetCost(); // This will be the TweakDB cost
+            QueueModLog(n"DEBUG", n"RAM", s"[QueueMod] Will refund \(originalRamCost) after ProcessRPGAction");
+
+            // In ExecuteQueuedEntry, around the ProcessRPGAction call:
+            let ramBefore: Float = GameInstance.GetStatPoolsSystem(this.GetGame()).GetStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Memory, false);
             paExec.ProcessRPGAction(this.GetGame());
-            
+            let ramAfter: Float = GameInstance.GetStatPoolsSystem(this.GetGame()).GetStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Memory, false);
+
+            QueueModLog(n"DEBUG", n"RAM", s"[QueueMod] ProcessRPGAction impact: before=\(ramBefore), after=\(ramAfter), delta=\(ramAfter - ramBefore)");
+
+            // Immediately refund the double-deduction
+            if originalRamCost > 0 {
+                this.QM_RefundRam(originalRamCost);
+                QueueModLog(n"DEBUG", n"RAM", s"[QueueMod] Refunded double-deducted RAM: \(originalRamCost)");
+            }
+
             // Check immediately after execution
             if this.IsDead() || StatusEffectSystem.ObjectHasStatusEffectWithTag(this, n"Dead") || 
                StatusEffectSystem.ObjectHasStatusEffectWithTag(this, n"Unconscious") {
@@ -363,10 +377,20 @@ private func QM_RefundRam(amount: Int32) -> Void {
     let ps: ref<PlayerSystem> = GameInstance.GetPlayerSystem(this.GetGame());
     let player: ref<PlayerPuppet> = IsDefined(ps) ? ps.GetLocalPlayerMainGameObject() as PlayerPuppet : null;
     if !IsDefined(player) || amount <= 0 { return; }
+    
     let sps: ref<StatPoolsSystem> = GameInstance.GetStatPoolsSystem(this.GetGame());
-    let oid: StatsObjectID = Cast<StatsObjectID>(player.GetEntityID());
-    sps.RequestChangingStatPoolValue(oid, gamedataStatPoolType.Memory, Cast<Float>(amount), player, false);
-    QueueModLog(n"DEBUG", n"RAM", s"[QueueMod] Refunded RAM (intent): \(amount)");
+    
+    // Check RAM before refund
+    let ramBefore: Float = sps.GetStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Memory, false);
+    
+    // USE EXACT SAME PATTERN AS WORKING DEDUCTION
+    let amountAsFloat: Float = Cast<Float>(amount);  // Positive for refund
+    sps.RequestChangingStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Memory, amountAsFloat, player, false);
+    
+    // Check RAM after refund
+    let ramAfter: Float = sps.GetStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Memory, false);
+    
+    QueueModLog(n"DEBUG", n"RAM", s"[QueueMod] Refund: before=\(ramBefore), after=\(ramAfter), delta=\(ramAfter - ramBefore)");
 }
 
 @addMethod(ScriptedPuppet)
