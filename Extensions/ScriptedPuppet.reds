@@ -10,35 +10,11 @@ import JE_HackQueueMod.Logging.*
 import JE_HackQueueMod.Core.*
 
 // =============================================================================
-// CONSTANTS - All LocKeys centralized for maintainability
-// =============================================================================
-
-// Upload/Progress related
-public func GetUploadInProgressKey() -> String { return "LocKey#7020"; }
-public func GetInvalidActionKey() -> String { return "LocKey#7019"; }
-
-// Resource/Cost related  
-public func GetOutOfMemoryKey() -> String { return "LocKey#27398"; }
-
-// Blocking/Restriction related
-public func GetBlockedKey() -> String { return "LocKey#40765"; }
-public func GetCooldownActiveKey() -> String { return "LocKey#27399"; }
-public func GetNoDeckMatchKey() -> String { return "LocKey#10943"; }
-public func GetTargetNotHackableKey() -> String { return "LocKey#27694"; }
-
-// No Quickhacks Available messages
-public func GetNoQuickhacksTitleKey() -> String { return "LocKey#42171"; }
-public func GetNoQuickhacksDescKey() -> String { return "LocKey#42172"; }
-
-// State enum mappings for better readability
-public func GetLockedState() -> EActionInactivityReson { return EActionInactivityReson.Locked; }
-public func GetReadyState() -> EActionInactivityReson { return EActionInactivityReson.Ready; }
-public func GetInvalidState() -> EActionInactivityReson { return EActionInactivityReson.Invalid; }
-public func GetOutOfMemoryState() -> EActionInactivityReson { return EActionInactivityReson.OutOfMemory; }
-
-// =============================================================================
 // SCRIPTED PUPPET EXTENSIONS
 // =============================================================================
+
+@addField(ScriptedPuppet)
+private let m_activeVanillaUploadID: TweakDBID;
 
 @addField(ScriptedPuppet)
 private let m_queueModActionQueue: ref<QueueModActionQueue>;
@@ -72,7 +48,6 @@ public func IsQueueModFull() -> Bool {
     let queueSize: Int32 = queue.GetQueueSize();
     let isFull: Bool = queueSize >= GetDefaultQueueSize();
     
-    // Only log when size changes
     if queueSize != this.m_lastQueueSizeLogged {
         QueueModLog(n"DEBUG", n"QUEUE", s"NPC queue size changed: \(queueSize), Full: \(isFull)");
         this.m_lastQueueSizeLogged = queueSize;
@@ -85,7 +60,6 @@ public func IsQueueModFull() -> Bool {
 public func QueueMod_AddToCache(actionID: TweakDBID) -> Void {
     if TDBID.IsValid(actionID) && !ArrayContains(this.m_queuedActionIDs, actionID) {
         ArrayPush(this.m_queuedActionIDs, actionID);
-        QueueModLog(n"DEBUG", n"QUEUE", s"Added to cache: \(TDBID.ToStringDEBUG(actionID)), cache size: \(ArraySize(this.m_queuedActionIDs))");
     }
 }
 
@@ -93,15 +67,12 @@ public func QueueMod_AddToCache(actionID: TweakDBID) -> Void {
 public func QueueMod_RemoveFromCache(actionID: TweakDBID) -> Void {
     if TDBID.IsValid(actionID) {
         ArrayRemove(this.m_queuedActionIDs, actionID);
-        QueueModLog(n"DEBUG", n"QUEUE", s"Removed from cache: \(TDBID.ToStringDEBUG(actionID)), cache size: \(ArraySize(this.m_queuedActionIDs))");
     }
 }
 
 @addMethod(ScriptedPuppet)
 public func QueueMod_ClearCache() -> Void {
-    let oldSize: Int32 = ArraySize(this.m_queuedActionIDs);
     ArrayClear(this.m_queuedActionIDs);
-    QueueModLog(n"DEBUG", n"QUEUE", s"Cache cleared: \(oldSize) -> 0");
 }
 
 // =============================================================================
@@ -119,10 +90,8 @@ private func TranslateChoicesIntoQuickSlotCommands(
         && this.GetQueueModActionQueue().GetQueueSize() > 0;
     
     if !(isOngoingUpload || hasQueued) || !this.IsQueueModEnabled() || this.IsQueueModFull() {
-        // Queue not active - use vanilla behavior
         wrappedMethod(puppetActions, commands);
     } else {
-        // Queue is active - build commands manually to preserve action data
         this.BuildQuickHackCommandsForQueue(puppetActions, commands);
         QuickhackModule.RequestRefreshQuickhackMenu(this.GetGame(), this.GetEntityID());    
     }
@@ -137,19 +106,16 @@ private func BuildQuickHackCommandsForQueue(
     let actionOwnerName: CName = StringToName(this.GetTweakDBFullDisplayName(true));
     let iceLVL: Float = this.GetICELevel();
     let playerQHacksList: array<PlayerQuickhackData> = RPGManager.GetPlayerQuickHackListWithQuality(playerRef);
-    let actionStartEffects: array<wref<ObjectActionEffect_Record>>;  // ADD THIS
-    let statModifiers: array<wref<StatModifier_Record>>;             // ADD THIS
+    let actionStartEffects: array<wref<ObjectActionEffect_Record>>;
+    let statModifiers: array<wref<StatModifier_Record>>;
 
-    //QueueModLog(n"DEBUG", n"QUEUE", s"Building queue commands, cache size: \(ArraySize(this.m_queuedActionIDs))");
-
-    // No quickhacks available case
     if ArraySize(playerQHacksList) == 0 {
         let newCommand: ref<QuickhackData> = new QuickhackData();
-        newCommand.m_title = GetNoQuickhacksTitleKey();
+        newCommand.m_title = "LocKey#42171";
         newCommand.m_isLocked = true;
         newCommand.m_actionOwnerName = actionOwnerName;
-        newCommand.m_actionState = GetInvalidState();
-        newCommand.m_description = GetNoQuickhacksDescKey();
+        newCommand.m_actionState = EActionInactivityReson.Invalid;
+        newCommand.m_description = "LocKey#42172";
         ArrayPush(commands, newCommand);
         return;
     }
@@ -158,13 +124,11 @@ private func BuildQuickHackCommandsForQueue(
     while i < ArraySize(playerQHacksList) {
         let actionRecord: wref<ObjectAction_Record> = playerQHacksList[i].actionRecord;
         
-        // Replace continue with if-else structure
         if Equals(actionRecord.ObjectActionType().Type(), gamedataObjectActionType.PuppetQuickHack) {
             let newCommand: ref<QuickhackData> = new QuickhackData();
             let actionMatchDeck: Bool = false;
             let matchedAction: ref<PuppetAction>;
 
-            // Find matching action in puppetActions array
             let i1: Int32 = 0;
             while i1 < ArraySize(puppetActions) {
                 if Equals(actionRecord.ActionName(), puppetActions[i1].GetObjectActionRecord().ActionName()) {
@@ -184,7 +148,8 @@ private func BuildQuickHackCommandsForQueue(
                 }
                 i1 += 1;
             }
-            // ADD VANILLA COOLDOWN CODE HERE (exactly as shown above)
+
+            // Get cooldown info
             ArrayClear(actionStartEffects);
             actionRecord.StartEffects(actionStartEffects);
             let i1: Int32 = 0;
@@ -201,6 +166,8 @@ private func BuildQuickHackCommandsForQueue(
                 i1 += 1;
             }
             ArrayClear(statModifiers);
+
+            // Set basic properties
             newCommand.m_actionOwnerName = actionOwnerName;
             newCommand.m_actionOwner = this.GetEntityID();
             newCommand.m_title = LocKeyToString(actionRecord.ObjectActionUI().Caption());
@@ -216,63 +183,59 @@ private func BuildQuickHackCommandsForQueue(
             newCommand.m_costRaw = BaseScriptableAction.GetBaseCostStatic(playerRef, actionRecord);
             newCommand.m_category = actionRecord.HackCategory();
             newCommand.m_actionMatchesTarget = actionMatchDeck;
-            // PRIORITY 1: Category-Level Blocking (Highest Priority)
+            
+            // State logic
             if IsDefined(newCommand.m_category) && Equals(newCommand.m_category.EnumName(), n"NotAHack") {
                 newCommand.m_isLocked = true;
-                newCommand.m_inactiveReason = GetBlockedKey();
-                newCommand.m_actionState = GetLockedState();
+                newCommand.m_inactiveReason = "LocKey#40765";
+                newCommand.m_actionState = EActionInactivityReson.Locked;
             } else {
-                // PRIORITY 2: No Deck Match (Second Highest)
                 if actionMatchDeck && IsDefined(matchedAction) {
                     newCommand.m_cost = matchedAction.GetCost();
                     
-                    // PRIORITY 3: Queue Duplicates (Third Priority)
-                    if ArrayContains(this.m_queuedActionIDs, matchedAction.GetObjectActionID()) {
+                    let actionID: TweakDBID = matchedAction.GetObjectActionID();
+                    let isDuplicate: Bool = ArrayContains(this.m_queuedActionIDs, actionID);
+                    
+                    if isDuplicate {
                         newCommand.m_isLocked = true;
-                        newCommand.m_inactiveReason = GetBlockedKey();
-                        newCommand.m_actionState = GetLockedState();
+                        newCommand.m_inactiveReason = "LocKey#40765";
+                        newCommand.m_actionState = EActionInactivityReson.Locked;
                         newCommand.m_action = matchedAction;
                     } 
-                    // PRIORITY 4: Active Cooldowns (Fourth Priority)
                     else if newCommand.m_cooldown > 0.00 && StatusEffectSystem.ObjectHasStatusEffect(playerRef, newCommand.m_cooldownTweak) {
                         newCommand.m_isLocked = true;
-                        newCommand.m_inactiveReason = GetCooldownActiveKey();
-                        newCommand.m_actionState = GetLockedState();
+                        newCommand.m_inactiveReason = "LocKey#27399";
+                        newCommand.m_actionState = EActionInactivityReson.Locked;
                         newCommand.m_action = matchedAction;
                     } 
                     else {
-                        // PRIORITY 5: Game State Blocking (Fifth Priority)
                         if matchedAction.IsInactive() {
                             newCommand.m_isLocked = true;
-                            newCommand.m_inactiveReason = matchedAction.GetInactiveReason(); // Dynamic from game
-                            newCommand.m_actionState = GetLockedState();
+                            newCommand.m_inactiveReason = matchedAction.GetInactiveReason();
+                            newCommand.m_actionState = EActionInactivityReson.Locked;
                             newCommand.m_action = matchedAction;
                         } else {
-                            // PRIORITY 6: RAM Cost Blocking (Sixth Priority)
                             if !matchedAction.CanPayCost() {
-                                newCommand.m_actionState = GetOutOfMemoryState();
+                                newCommand.m_actionState = EActionInactivityReson.OutOfMemory;
                                 newCommand.m_isLocked = true;
-                                newCommand.m_inactiveReason = GetOutOfMemoryKey();
+                                newCommand.m_inactiveReason = "LocKey#27398";
                                 newCommand.m_action = matchedAction;
                             } else {
-                                // PRIORITY 7: Ready State (Success Case)
-                                newCommand.m_actionState = GetReadyState();
+                                newCommand.m_actionState = EActionInactivityReson.Ready;
                                 newCommand.m_action = matchedAction;
                             }
                         }
                     }
                 } else {
-                    // PRIORITY 2: No matching action on cyberdeck
                     newCommand.m_isLocked = true;
-                    newCommand.m_inactiveReason = GetNoDeckMatchKey();
-                    newCommand.m_actionState = GetInvalidState();
+                    newCommand.m_inactiveReason = "LocKey#10943";
+                    newCommand.m_actionState = EActionInactivityReson.Invalid;
                 }
             }
 
-        // Set final state if not locked
-        if !newCommand.m_isLocked {
-            newCommand.m_actionState = EActionInactivityReson.Ready;
-        }
+            if !newCommand.m_isLocked {
+                newCommand.m_actionState = EActionInactivityReson.Ready;
+            }
 
             ArrayPush(commands, newCommand);
         }
@@ -302,12 +265,10 @@ private func BuildQuickHackCommandsForQueue(
 protected cb func OnUploadProgressStateChanged(evt: ref<UploadProgramProgressEvent>) -> Bool {
     let result: Bool = wrappedMethod(evt);
 
-    // Only check our queue processing
     if Equals(evt.progressBarContext, EProgressBarContext.QuickHack) && 
-       Equals(evt.progressBarType, EProgressBarType.UPLOAD) && 
-       Equals(evt.state, EUploadProgramState.COMPLETED) {
+       Equals(evt.progressBarType, EProgressBarType.UPLOAD) {
         
-        // Check death before processing queue
+        // Death check first - clear queue immediately for any upload state
         if this.IsDead() || 
            StatusEffectSystem.ObjectHasStatusEffectWithTag(this, n"Dead") ||
            StatusEffectSystem.ObjectHasStatusEffectWithTag(this, n"Unconscious") {
@@ -315,21 +276,28 @@ protected cb func OnUploadProgressStateChanged(evt: ref<UploadProgramProgressEve
             let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
             if IsDefined(queue) && queue.GetQueueSize() > 0 {
                 queue.ClearQueue(this.GetGame(), this.GetEntityID());
-                QueueModLog(n"DEBUG", n"QUICKHACK", "Target dead - queue cleared, vanilla hack may still apply");
+                QueueModLog(n"DEBUG", n"QUICKHACK", "Target dead - queue cleared");
             }
             return result;
         }
         
-        // Process queue only if alive
-        let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
-        if IsDefined(queue) && queue.GetQueueSize() > 0 {
-            let entry: ref<QueueModEntry> = queue.PopNextEntry();
-            if IsDefined(entry) {
-                QueueModLog(n"DEBUG", n"QUICKHACK", s"Upload complete for NPC=\(GetLocalizedText(this.GetDisplayName())) processing queue");
-                this.ExecuteQueuedEntry(entry);
+        // Only process queue/cache for COMPLETED uploads (target is alive)
+        if Equals(evt.state, EUploadProgramState.COMPLETED) {
+            let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
+            if IsDefined(queue) && queue.GetQueueSize() > 0 {
+                let entry: ref<QueueModEntry> = queue.PopNextEntry();
+                if IsDefined(entry) {
+                    QueueModLog(n"DEBUG", n"QUICKHACK", s"Upload complete for NPC=\(GetLocalizedText(this.GetDisplayName())) processing queue");
+                    this.ExecuteQueuedEntry(entry);
+                }
+            } else {
+                // UNIFIED CLEANUP: Remove completed vanilla action
+                if TDBID.IsValid(this.m_activeVanillaUploadID) {
+                    this.QueueMod_RemoveFromCache(this.m_activeVanillaUploadID);
+                    this.m_activeVanillaUploadID = TDBID.None();
+                    QueueModLog(n"DEBUG", n"CACHE", "Vanilla upload completed - removed from cache");
+                }
             }
-        } else {
-            QueueModLog(n"DEBUG", n"QUEUE", "No queued entries to execute");
         }
     }
 
@@ -347,7 +315,6 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
         return;
     }
 
-    // Validate target is still alive and valid
     if !IsDefined(this) || this.IsDead() || StatusEffectSystem.ObjectHasStatusEffectWithTag(this, n"Dead") || StatusEffectSystem.ObjectHasStatusEffectWithTag(this, n"Unconscious") {
         QueueModLog(n"DEBUG", n"QUICKHACK", "Target invalid/dead/unconscious - clearing queue");
         let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
@@ -357,7 +324,6 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
         return;
     }
 
-    // Get player context for execution
     let playerSystem: ref<PlayerSystem> = GameInstance.GetPlayerSystem(this.GetGame());
     let player: ref<PlayerPuppet> = playerSystem.GetLocalPlayerMainGameObject() as PlayerPuppet;
     if !IsDefined(player) {
@@ -368,7 +334,6 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
     if Equals(entry.entryType, GetActionEntryType()) && IsDefined(entry.action) {
         QueueModLog(n"DEBUG", n"QUICKHACK", s"Executing queued action: class=\(entry.action.GetClassName()) on NPC=\(GetLocalizedText(this.GetDisplayName()))");
         
-        // Validate action identity before execution
         let actionID: TweakDBID = TDBID.None();
         let paExec: ref<PuppetAction> = entry.action as PuppetAction;
         
@@ -383,20 +348,14 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
         }
 
         if IsDefined(paExec) {
-            // Ensure action targets this NPC
             paExec.RegisterAsRequester(this.GetEntityID());
             paExec.SetExecutor(player);
             
-            // Lock the queue during execution to prevent race conditions
             this.GetQueueModActionQueue().LockQueue();
             
-            // Use ProcessRPGAction for reliable post-upload execution
-            // Cost override ensures no double deduction
             QueueModLog(n"DEBUG", n"QUICKHACK", s"Processing PuppetAction RPG for target: \(GetLocalizedText(this.GetDisplayName()))");
-
             paExec.ProcessRPGAction(this.GetGame());
 
-            // Check immediately after execution
             if this.IsDead() || StatusEffectSystem.ObjectHasStatusEffectWithTag(this, n"Dead") || 
                StatusEffectSystem.ObjectHasStatusEffectWithTag(this, n"Unconscious") {
                 QueueModLog(n"DEBUG", n"QUICKHACK", "Target died during execution - clearing queue");
@@ -419,7 +378,6 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
 protected cb func OnStatusEffectApplied(evt: ref<ApplyStatusEffectEvent>) -> Bool {
     let result: Bool = wrappedMethod(evt);
     
-    // Check if death/unconscious effect
     if IsDefined(evt.staticData) {
         let effectID: TweakDBID = evt.staticData.GetID();
         let effectIDStr: String = TDBID.ToStringDEBUG(effectID);
