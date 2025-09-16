@@ -121,7 +121,7 @@ private func BuildQuickHackCommandsForQueue(
     let iceLVL: Float = this.GetICELevel();
     let playerQHacksList: array<PlayerQuickhackData> = RPGManager.GetPlayerQuickHackListWithQuality(playerRef);
 
-    QueueModLog(n"DEBUG", n"QUEUE", s"Building queue commands, cache size: \(ArraySize(this.m_queuedActionIDs))");
+    //QueueModLog(n"DEBUG", n"QUEUE", s"Building queue commands, cache size: \(ArraySize(this.m_queuedActionIDs))");
 
     if ArraySize(playerQHacksList) == 0 {
         let newCommand: ref<QuickhackData> = new QuickhackData();
@@ -181,60 +181,55 @@ private func BuildQuickHackCommandsForQueue(
             newCommand.m_costRaw = BaseScriptableAction.GetBaseCostStatic(playerRef, actionRecord);
             newCommand.m_category = actionRecord.HackCategory();
             newCommand.m_actionMatchesTarget = actionMatchDeck;
-
-            // Replace your current if-else-if chain with this structure:
-
-// Replace your current if-else-if chain with this structure:
-
-// Check for NotAHack category first
-if IsDefined(newCommand.m_category) && Equals(newCommand.m_category.EnumName(), n"NotAHack") {
-    newCommand.m_isLocked = true;
-    newCommand.m_inactiveReason = GetBlockedKey();
-    newCommand.m_actionState = EActionInactivityReson.Locked;
-} else {
-    if actionMatchDeck && IsDefined(matchedAction) {
-        newCommand.m_cost = matchedAction.GetCost();
-        
-        // FAST DUPLICATE CHECK - O(1) performance
-        if ArrayContains(this.m_queuedActionIDs, matchedAction.GetObjectActionID()) {
-            newCommand.m_isLocked = true;
-            newCommand.m_inactiveReason = GetBlockedKey();
-            newCommand.m_actionState = EActionInactivityReson.Locked;
-            QueueModLog(n"DEBUG", n"QUEUE", s"Blocked duplicate: \(GetLocalizedText(newCommand.m_title))");
-        } else {
-            // Vanilla structure: Check IsInactive first
-            if matchedAction.IsInactive() {
+            // Check for NotAHack category first
+            if IsDefined(newCommand.m_category) && Equals(newCommand.m_category.EnumName(), n"NotAHack") {
                 newCommand.m_isLocked = true;
-                newCommand.m_inactiveReason = matchedAction.GetInactiveReason();
-                // newCommand.m_actionState stays as Locked (default from above)
-                
-                // Vanilla action assignment for inactive actions
-                if this.HasActiveQuickHackUpload() {
-                    newCommand.m_action = matchedAction;
-                }
+                newCommand.m_inactiveReason = GetBlockedKey();
+                newCommand.m_actionState = EActionInactivityReson.Locked;
             } else {
-                // Action is active - check RAM cost
-                if !matchedAction.CanPayCost() {
-                    newCommand.m_actionState = EActionInactivityReson.OutOfMemory;
+                if actionMatchDeck && IsDefined(matchedAction) {
+                    newCommand.m_cost = matchedAction.GetCost();
+                    
+                    // FAST DUPLICATE CHECK - O(1) performance
+                    if ArrayContains(this.m_queuedActionIDs, matchedAction.GetObjectActionID()) {
+                        newCommand.m_isLocked = true;
+                        newCommand.m_inactiveReason = GetBlockedKey();
+                        newCommand.m_actionState = EActionInactivityReson.Locked;
+                        QueueModLog(n"DEBUG", n"QUEUE", s"Blocked duplicate: \(GetLocalizedText(newCommand.m_title))");
+                    } else {
+                        // Vanilla structure: Check IsInactive first
+                        if matchedAction.IsInactive() {
+                            newCommand.m_isLocked = true;
+                            newCommand.m_inactiveReason = matchedAction.GetInactiveReason();
+                            // newCommand.m_actionState stays as Locked (default from above)
+                            
+                            // Vanilla action assignment for inactive actions
+                            if this.HasActiveQuickHackUpload() {
+                                newCommand.m_action = matchedAction;
+                            }
+                        } else {
+                            // Action is active - check RAM cost
+                            if !matchedAction.CanPayCost() {
+                                newCommand.m_actionState = EActionInactivityReson.OutOfMemory;
+                                newCommand.m_isLocked = true;
+                                newCommand.m_inactiveReason = "LocKey#27398";
+                            }
+                            
+                            // REMOVED: Upload check - this is what queue mod handles
+                            
+                            // Set action reference using vanilla condition
+                            if !matchedAction.IsInactive() || this.HasActiveQuickHackUpload() {
+                                newCommand.m_action = matchedAction;
+                            }
+                        }
+                    }
+                } else {
+                    // No matching action on cyberdeck
                     newCommand.m_isLocked = true;
-                    newCommand.m_inactiveReason = "LocKey#27398";
-                }
-                
-                // REMOVED: Upload check - this is what queue mod handles
-                
-                // Set action reference using vanilla condition
-                if !matchedAction.IsInactive() || this.HasActiveQuickHackUpload() {
-                    newCommand.m_action = matchedAction;
+                    newCommand.m_inactiveReason = "LocKey#10943";
+                    newCommand.m_actionState = EActionInactivityReson.Invalid;
                 }
             }
-        }
-    } else {
-        // No matching action on cyberdeck
-        newCommand.m_isLocked = true;
-        newCommand.m_inactiveReason = "LocKey#10943";
-        newCommand.m_actionState = EActionInactivityReson.Invalid;
-    }
-}
 
 // Set final state if not locked
 if !newCommand.m_isLocked {
