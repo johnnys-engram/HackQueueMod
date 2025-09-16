@@ -256,11 +256,29 @@ private func ApplyQuickHack() -> Bool {
             QueueModLog(n"ERROR", n"QUEUE", s"Cannot queue - no valid action available");
             return false;
         }
-    } else {
-        // For non-queued hacks, execute normally - let vanilla handle everything
-        QueueModLog(n"DEBUG", n"QUICKHACK", "Executing non-queued hack normally (vanilla handles all)");
-        return wrappedMethod();
-    }
+            } else {
+                // For non-queued hacks, execute normally - let vanilla handle everything
+                QueueModLog(n"DEBUG", n"QUICKHACK", "Executing non-queued hack normally (vanilla handles all)");
+                
+                // Execute vanilla first
+                let vanillaResult: Bool = wrappedMethod();
+                
+                // Only cache if vanilla execution succeeded
+                if vanillaResult && IsDefined(this.m_selectedData.m_action) {
+                    let puppetAction: ref<PuppetAction> = this.m_selectedData.m_action as PuppetAction;
+                    if IsDefined(puppetAction) {
+                        let targetID: EntityID = this.m_selectedData.m_actionOwner;
+                        let target: ref<ScriptedPuppet> = GameInstance.FindEntityByID(this.m_gameInstance, targetID) as ScriptedPuppet;
+                        if IsDefined(target) {
+                            let actionID: TweakDBID = puppetAction.GetObjectActionID();
+                            target.QueueMod_AddToCache(actionID);
+                            QueueModLog(n"DEBUG", n"CACHE", s"Cached successful vanilla upload: \(TDBID.ToStringDEBUG(actionID))");
+                        }
+                    }
+                }
+                
+                return vanillaResult;
+            }
     
     // This should never be reached since shouldQueue=true returns early above
     QueueModLog(n"ERROR", n"QUEUE", "Unexpected code path - shouldQueue was true but we didn't queue");
