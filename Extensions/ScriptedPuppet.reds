@@ -10,10 +10,19 @@ import JE_HackQueueMod.Logging.*
 import JE_HackQueueMod.Core.*
 
 // =============================================================================
-// SCRIPTED PUPPET EXTENSIONS - MOST CRITICAL COMPONENT
+// CONSTANTS
 // =============================================================================
 
-// ScriptedPuppet extensions
+// LocKey constants for better maintainability
+public func GetUploadInProgressKey() -> String { return "LocKey#7020"; }
+public func GetOutOfMemoryKey() -> String { return "LocKey#27398"; }
+public func GetInvalidActionKey() -> String { return "LocKey#7019"; }
+public func GetBlockedKey() -> String { return "LocKey#40765"; }
+
+// =============================================================================
+// SCRIPTED PUPPET EXTENSIONS
+// =============================================================================
+
 @addField(ScriptedPuppet)
 private let m_queueModActionQueue: ref<QueueModActionQueue>;
 
@@ -41,21 +50,20 @@ public func IsQueueModFull() -> Bool {
         return false;
     }
     let queueSize: Int32 = queue.GetQueueSize();
-    let isFull: Bool = queueSize >= 3;
+    let isFull: Bool = queueSize >= GetDefaultQueueSize();
     
     // Only log when size changes
     if queueSize != this.m_lastQueueSizeLogged {
-        QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod] NPC queue size changed: \(queueSize), Full: \(isFull)");
+        QueueModLog(n"DEBUG", n"QUEUE", s"NPC queue size changed: \(queueSize), Full: \(isFull)");
         this.m_lastQueueSizeLogged = queueSize;
     }
     return isFull;
 }
 
 // =============================================================================
-// Phase 3.2: NPC Upload Detection & Queue Processing - v1.63 Compatible Syntax
+// NPC Upload Detection & Queue Processing
 // =============================================================================
 
-// Just add this ONE method to your ScriptedPuppet.reds file:
 @wrapMethod(ScriptedPuppet)
 private func TranslateChoicesIntoQuickSlotCommands(
     puppetActions: array<ref<PuppetAction>>, 
@@ -66,7 +74,7 @@ private func TranslateChoicesIntoQuickSlotCommands(
     let hasQueued: Bool = IsDefined(this.GetQueueModActionQueue()) 
         && this.GetQueueModActionQueue().GetQueueSize() > 0;
     
-    // Call vanilla first → all values, costs, cooldowns, prereqs set correctly
+    // Call vanilla first - all values, costs, cooldowns, prereqs set correctly
     wrappedMethod(puppetActions, commands);
     
     if (isOngoingUpload || hasQueued) && this.IsQueueModEnabled() && !this.IsQueueModFull() {
@@ -76,7 +84,7 @@ private func TranslateChoicesIntoQuickSlotCommands(
             if IsDefined(cmd) 
                 && cmd.m_isLocked 
                 && Equals(cmd.m_type, gamedataObjectActionType.PuppetQuickHack) 
-                && Equals(cmd.m_inactiveReason, "LocKey#7020") {
+                && Equals(cmd.m_inactiveReason, GetUploadInProgressKey()) {
 
                 // Unlock upload-blocked command
                 cmd.m_isLocked = false;
@@ -91,7 +99,7 @@ private func TranslateChoicesIntoQuickSlotCommands(
  
         QuickhackModule.RequestRefreshQuickhackMenu(this.GetGame(), this.GetEntityID());     
           
-        // Sync PuppetAction states (critical vanilla requirement)
+        // Sync PuppetAction states
         let j: Int32 = 0;
         while j < ArraySize(commands) {
             if IsDefined(commands[j]) && commands[j].m_isLocked && IsDefined(commands[j].m_action) {
@@ -103,7 +111,7 @@ private func TranslateChoicesIntoQuickSlotCommands(
             j += 1;
         }
         
-        QueueModLog(n"DEBUG", n"EVENTS", "[QueueMod] Upload bypass with re-validation complete");
+        QueueModLog(n"DEBUG", n"EVENTS", "Upload bypass with re-validation complete");
     }
 }
 
@@ -123,31 +131,31 @@ private func RevalidateCommandExcludingUpload(
     
     // Re-run vanilla validation checks (excluding upload)
     
-    // 1. Cost check
+    // Cost check
     if !action.CanPayCost() {
         cmd.m_isLocked = true;
         cmd.m_actionState = EActionInactivityReson.OutOfMemory;
-        cmd.m_inactiveReason = "LocKey#27398";
+        cmd.m_inactiveReason = GetOutOfMemoryKey();
         return;
     }
     
-    // 2. Possibility/visibility check  
+    // Possibility/visibility check  
     let player: ref<PlayerPuppet> = GetPlayer(this.GetGame());
     if !IsDefined(player) || !action.IsPossible(this) || !action.IsVisible(player) {
         cmd.m_isLocked = true;
         cmd.m_actionState = EActionInactivityReson.Invalid;
-        cmd.m_inactiveReason = "LocKey#7019";
+        cmd.m_inactiveReason = GetInvalidActionKey();
         return;
     }
     
-    // 3. Check if action became inactive
+    // Check if action became inactive
     if action.IsInactive() {
         cmd.m_isLocked = true;
         cmd.m_inactiveReason = action.GetInactiveReason();
         return;
     }
     
-    // 4. Target active prereqs (simplified)
+    // Target active prereqs (simplified)
     let actionRecord: ref<ObjectAction_Record> = action.GetObjectActionRecord();
     if IsDefined(actionRecord) && actionRecord.GetTargetActivePrereqsCount() > 0 {
         let targetActivePrereqs: array<wref<ObjectActionPrereq_Record>>;
@@ -167,18 +175,14 @@ private func RevalidateCommandExcludingUpload(
             i += 1;
         }
     }
-    
-    // If we get here, all validation passed - command stays unlocked
 }
- 
 
 // =============================================================================
-// Phase 3.3: Queue Execution on Upload Completion - v1.63 Syntax
+// Queue Execution on Upload Completion
 // =============================================================================
 
 @wrapMethod(ScriptedPuppet)
 protected cb func OnUploadProgressStateChanged(evt: ref<UploadProgramProgressEvent>) -> Bool {
-    // Let vanilla process first (can't prevent it)
     let result: Bool = wrappedMethod(evt);
 
     // Only check our queue processing
@@ -186,12 +190,11 @@ protected cb func OnUploadProgressStateChanged(evt: ref<UploadProgramProgressEve
        Equals(evt.progressBarType, EProgressBarType.UPLOAD) && 
        Equals(evt.state, EUploadProgramState.COMPLETED) {
         
-        // Check death NOW before processing OUR queue
+        // Check death before processing queue
         if this.IsDead() || 
            StatusEffectSystem.ObjectHasStatusEffectWithTag(this, n"Dead") ||
            StatusEffectSystem.ObjectHasStatusEffectWithTag(this, n"Unconscious") {
             
-            // Clear our queue
             let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
             if IsDefined(queue) && queue.GetQueueSize() > 0 {
                 queue.ClearQueue(this.GetGame(), this.GetEntityID());
@@ -203,13 +206,6 @@ protected cb func OnUploadProgressStateChanged(evt: ref<UploadProgramProgressEve
         // Process queue only if alive
         let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
         if IsDefined(queue) && queue.GetQueueSize() > 0 {
-            // FIX 4: Validate before processing - halt execution if validation fails
-            if !queue.ValidateQueueIntegrity() {
-                QueueModLog(n"ERROR", n"QUEUE", "[QueueMod] Queue integrity failed - halting execution and clearing queue");
-                queue.ClearQueue(this.GetGame(), this.GetEntityID()); // Clear corrupted queue
-                return result;
-            }
-            
             let entry: ref<QueueModEntry> = queue.PopNextEntry();
             if IsDefined(entry) {
                 QueueModLog(n"DEBUG", n"QUICKHACK", s"Upload complete for NPC=\(GetLocalizedText(this.GetDisplayName())) processing queue");
@@ -224,26 +220,17 @@ protected cb func OnUploadProgressStateChanged(evt: ref<UploadProgramProgressEve
 }
 
 // =============================================================================
-// CRITICAL FIX: Correct Quickhack Execution Context
-// Replace the ExecuteQueuedEntry method in ScriptedPuppet
+// Quickhack Execution
 // =============================================================================
 
 @addMethod(ScriptedPuppet)
 private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
     if !IsDefined(entry) {
-        QueueModLog(n"ERROR", n"QUEUE", "[QueueMod] ExecuteQueuedEntry called with null entry");
-        return;
-    }
-    
-    // FIX 4: Validate queue integrity before execution
-    let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
-    if IsDefined(queue) && !queue.ValidateQueueIntegrity() {
-        QueueModLog(n"ERROR", n"QUEUE", "[QueueMod] Queue integrity failed during execution - halting");
-        queue.ClearQueue(this.GetGame(), this.GetEntityID());
+        QueueModLog(n"ERROR", n"QUEUE", "ExecuteQueuedEntry called with null entry");
         return;
     }
 
-    // PHASE 1: Validate target is still alive and valid (enhanced death check)
+    // Validate target is still alive and valid
     if !IsDefined(this) || this.IsDead() || StatusEffectSystem.ObjectHasStatusEffectWithTag(this, n"Dead") || StatusEffectSystem.ObjectHasStatusEffectWithTag(this, n"Unconscious") {
         QueueModLog(n"DEBUG", n"QUICKHACK", "Target invalid/dead/unconscious - clearing queue");
         let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
@@ -253,15 +240,15 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
         return;
     }
 
-    // CRITICAL FIX: Get player context for execution
+    // Get player context for execution
     let playerSystem: ref<PlayerSystem> = GameInstance.GetPlayerSystem(this.GetGame());
     let player: ref<PlayerPuppet> = playerSystem.GetLocalPlayerMainGameObject() as PlayerPuppet;
     if !IsDefined(player) {
-        QueueModLog(n"ERROR", n"QUICKHACK", "[QueueMod] Cannot find player for quickhack execution");
+        QueueModLog(n"ERROR", n"QUICKHACK", "Cannot find player for quickhack execution");
         return;
     }
 
-    if Equals(entry.entryType, 0) && IsDefined(entry.action) {
+    if Equals(entry.entryType, GetActionEntryType()) && IsDefined(entry.action) {
         QueueModLog(n"DEBUG", n"QUICKHACK", s"Executing queued action: class=\(entry.action.GetClassName()) on NPC=\(GetLocalizedText(this.GetDisplayName()))");
         
         // Validate action identity before execution
@@ -274,32 +261,30 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
         }
         
         if !TDBID.IsValid(actionID) {
-            QueueModLog(n"ERROR", n"QUICKHACK", s"[QueueMod][Exec] Action has invalid TweakDBID - skipping execution");
+            QueueModLog(n"ERROR", n"QUICKHACK", "Action has invalid TweakDBID - skipping execution");
             return;
         }
 
-        // CRITICAL FIX: Use ProcessRPGAction instead of OnQuickSlotCommandUsed for reliable execution
-         if IsDefined(paExec) {
+        if IsDefined(paExec) {
             // Ensure action targets this NPC
             paExec.RegisterAsRequester(this.GetEntityID());
-            paExec.SetExecutor(player); // CRITICAL: Player executes, NPC receives
+            paExec.SetExecutor(player);
             
-            // BUG 1 FIX: Lock the queue during execution to prevent race conditions
+            // Lock the queue during execution to prevent race conditions
             this.GetQueueModActionQueue().LockQueue();
             
-            // CRITICAL FIX: Use ProcessRPGAction for reliable post-upload execution
-            // BUGFIX: Skip cost validation since RAM already deducted during queuing
-            QueueModLog(n"DEBUG", n"QUICKHACK", s"[QueueMod][Exec] Processing PuppetAction RPG for target: \(GetLocalizedText(this.GetDisplayName()))");
+            // Use ProcessRPGAction for reliable post-upload execution
+            QueueModLog(n"DEBUG", n"QUICKHACK", s"Processing PuppetAction RPG for target: \(GetLocalizedText(this.GetDisplayName()))");
             
             // Direct execution since RAM already deducted during queuing
-            let originalRamCost: Int32 = paExec.GetCost(); // This will be the TweakDB cost
+            let originalRamCost: Int32 = paExec.GetCost();
 
              paExec.ProcessRPGAction(this.GetGame());
 
             // Immediately refund the double-deduction
             if originalRamCost > 0 {
                 this.QM_RefundRAM(originalRamCost);
-                QueueModLog(n"DEBUG", n"RAM", s"[QueueMod] Refunded ProcessRPGAction RAM: \(originalRamCost)");
+                QueueModLog(n"DEBUG", n"RAM", s"Refunded ProcessRPGAction RAM: \(originalRamCost)");
             }
 
             // Check immediately after execution
@@ -307,17 +292,16 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
                StatusEffectSystem.ObjectHasStatusEffectWithTag(this, n"Unconscious") {
                 QueueModLog(n"DEBUG", n"QUICKHACK", "Target died during execution - clearing queue");
                 this.GetQueueModActionQueue().ClearQueue(this.GetGame(), this.GetEntityID());
-                // Don't try to reverse - just prevent next execution
                 return;
             }
             this.GetQueueModActionQueue().UnlockQueue();
             
         } else {
-            QueueModLog(n"DEBUG", n"QUICKHACK", s"[QueueMod][Exec] Unknown action type: \(entry.action.GetClassName())");
+            QueueModLog(n"DEBUG", n"QUICKHACK", s"Unknown action type: \(entry.action.GetClassName())");
         }
               
     } else {
-        QueueModLog(n"ERROR", n"QUEUE", s"[QueueMod] Invalid entry type: \(entry.entryType)");
+        QueueModLog(n"ERROR", n"QUEUE", s"Invalid entry type: \(entry.entryType)");
     }
 }
 
@@ -337,13 +321,13 @@ private final func QM_RefundRAM(amount: Int32) -> Bool {
     
     let refundAmount: Float = Cast<Float>(amount);
     
-    // CORRECT v1.63 signature: (oid, poolType, value, instigator, useOldValue, isPercentage)
+    // v1.63 signature: (oid, poolType, value, instigator, useOldValue, isPercentage)
     sps.RequestChangingStatPoolValue(oid, gamedataStatPoolType.Memory, refundAmount, player, true, false);
     
     return true;
 }
 
-// EVENT-DRIVEN CLEANUP: Proper status effect listener for death/unconscious
+// Event-driven cleanup for death/unconscious status effects
 @wrapMethod(ScriptedPuppet)
 protected cb func OnStatusEffectApplied(evt: ref<ApplyStatusEffectEvent>) -> Bool {
     let result: Bool = wrappedMethod(evt);
@@ -359,7 +343,7 @@ protected cb func OnStatusEffectApplied(evt: ref<ApplyStatusEffectEvent>) -> Boo
             let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
             if IsDefined(queue) && queue.GetQueueSize() > 0 {
                 queue.ClearQueue(this.GetGame(), this.GetEntityID());
-                QueueModLog(n"DEBUG", n"EVENTS", s"[QueueMod] Queue cleared on death/unconscious status: \(effectIDStr)");
+                QueueModLog(n"DEBUG", n"EVENTS", s"Queue cleared on death/unconscious status: \(effectIDStr)");
             }
         }
     }

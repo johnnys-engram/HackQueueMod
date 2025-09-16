@@ -21,7 +21,7 @@ private let m_queueModHelper: ref<QueueModHelper>;
 public func GetQueueModHelper() -> ref<QueueModHelper> {
     if !IsDefined(this.m_queueModHelper) {
         this.m_queueModHelper = new QueueModHelper();
-        QueueModLog(n"DEBUG", n"EVENTS", "[QueueMod] Player loaded - queue system ready");
+        QueueModLog(n"DEBUG", n"EVENTS", "Player loaded - queue system ready");
     }
     return this.m_queueModHelper;
 }
