@@ -43,97 +43,6 @@ public func GetCost() -> Int32 {
     return wrappedMethod();
 }
 
-// =============================================================================
-// QUICKHACKS LIST GAME CONTROLLER EXTENSIONS
-// =============================================================================
-
-@addMethod(QuickhacksListGameController)
-private func IsQuickHackCurrentlyUploading() -> Bool {
-    // Rule 1: Selected row UI lock (fastest path)
-    if this.QueueModSelectedIsUILocked() {
-        QueueModLog(n"DEBUG", n"EVENTS", "Selected row UI lock indicates upload in progress");
-        return true;
-    }
-
-    // Rule 1b: Generic lock check for unknown reasons
-    if IsDefined(this.m_selectedData) && this.m_selectedData.m_isLocked && 
-       NotEquals(this.m_selectedData.m_actionState, EActionInactivityReson.Ready) {
-        QueueModLog(n"DEBUG", n"EVENTS", "Selected item locked with unknown reason - treating as upload");
-        return true;
-    }
-
-    // Rule 1c: Full UI lock scan (fallback for timing races)
-    if this.QueueModDetectUILock() {
-        QueueModLog(n"DEBUG", n"EVENTS", "Target indicates upload in progress");
-        return true;
-    }
-
-    // Rule 2: Target check (only if NPC - devices skip pool)
-    if IsDefined(this.m_selectedData) {
-        let targetID: EntityID = this.m_selectedData.m_actionOwner;
-        if EntityID.IsDefined(targetID) {
-            let target: ref<GameObject> = GameInstance.FindEntityByID(this.m_gameInstance, targetID) as GameObject;
-            if IsDefined(target) {
-                QueueModLog(n"DEBUG", n"EVENTS", s"Target class: \(ToString(target.GetClassName()))");
-                
-                let puppet: ref<ScriptedPuppet> = target as ScriptedPuppet;
-                if IsDefined(puppet) {
-                    // Only check StatPool for NPCs (ScriptedPuppets)
-                    let uploading: Bool = GameInstance.GetStatPoolsSystem(this.m_gameInstance)
-                        .IsStatPoolAdded(Cast<StatsObjectID>(puppet.GetEntityID()), gamedataStatPoolType.QuickHackUpload);
-                    QueueModLog(n"DEBUG", n"EVENTS", s"NPC upload pool: \(uploading)");
-                    return uploading;
-                } else {
-                    // Device detected - rely only on UI lock (already checked above)
-                    QueueModLog(n"DEBUG", n"EVENTS", "Device target - UI lock only");
-                    return false;
-                }
-            }
-        }
-    }
-
-    // Rule 4: Fallback to player pool (rare cases)
-    let playerSystem: ref<PlayerSystem> = GameInstance.GetPlayerSystem(this.m_gameInstance);
-    let player: ref<PlayerPuppet> = playerSystem.GetLocalPlayerMainGameObject() as PlayerPuppet;
-    if IsDefined(player) {
-        let hasUploadPool: Bool = GameInstance.GetStatPoolsSystem(this.m_gameInstance)
-            .IsStatPoolAdded(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.QuickHackUpload);
-        QueueModLog(n"DEBUG", n"EVENTS", s"Player upload pool (fallback): \(hasUploadPool)");
-        return hasUploadPool;
-    }
-
-    return false;
-}
-
-@addMethod(QuickhacksListGameController)
-private func QueueModSelectedIsUILocked() -> Bool {
-    if !IsDefined(this.m_selectedData) {
-        return false;
-    }
-    
-    let d: ref<QuickhackData> = this.m_selectedData;
-    if !d.m_isLocked {
-        return false;
-    }
-    
-    let r: String = ToString(d.m_inactiveReason);
-    return Equals(r, GetOutOfMemoryKey()) || Equals(r, GetBlockedKey()) || Equals(r, GetUploadInProgressKey()) || Equals(r, GetInvalidActionKey());
-}
-
-@addMethod(QuickhacksListGameController)
-private func QueueModDetectUILock() -> Bool {
-    let i: Int32 = 0;
-    while i < ArraySize(this.m_data) {
-        let entry: ref<QuickhackData> = this.m_data[i];
-        if IsDefined(entry) && entry.m_isLocked && 
-           (Equals(ToString(entry.m_inactiveReason), GetUploadProgressKey()) ||
-            Equals(ToString(entry.m_inactiveReason), GetUploadInProgressKey())) {
-            return true;
-        }
-        i += 1;
-    }
-    return false;
-}
 
 // =============================================================================
 // Cooldown Detection and Management
@@ -188,7 +97,7 @@ private func ApplyQuickHack() -> Bool {
     }
 
     // Check if we should queue FIRST, before touching RAM
-    let shouldQueue: Bool = this.IsQuickHackCurrentlyUploading();
+    let shouldQueue: Bool = this.QueueMod_IsTargetUploading();
     QueueModLog(n"DEBUG", n"QUEUE", s"Should queue: \(shouldQueue)");
 
     if shouldQueue {
@@ -298,6 +207,26 @@ QueueModLog(n"DEBUG", n"RAM", s"Final RAM state: Cost=\(costInt) (\(costFloat)),
     // This should never be reached since shouldQueue=true returns early above
     QueueModLog(n"ERROR", n"QUEUE", "Unexpected code path - shouldQueue was true but we didn't queue");
     return wrappedMethod();
+}
+
+@addMethod(QuickhacksListGameController)
+private func QueueMod_IsTargetUploading() -> Bool {
+    if !IsDefined(this.m_selectedData) || !EntityID.IsDefined(this.m_selectedData.m_actionOwner) {
+        return false;
+    }
+    
+    let targetID: EntityID = this.m_selectedData.m_actionOwner;
+    let target: ref<ScriptedPuppet> = GameInstance.FindEntityByID(this.m_gameInstance, targetID) as ScriptedPuppet;
+    
+    if !IsDefined(target) {
+        return false;
+    }
+    
+    // Same check as TranslateChoicesIntoQuickSlotCommands
+    let isOngoingUpload: Bool = GameInstance.GetStatPoolsSystem(this.m_gameInstance)
+        .IsStatPoolAdded(Cast<StatsObjectID>(target.GetEntityID()), gamedataStatPoolType.QuickHackUpload);
+    
+    return isOngoingUpload;
 }
 
 // =============================================================================
