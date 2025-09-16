@@ -80,6 +80,7 @@ private func TranslateChoicesIntoQuickSlotCommands(
     } else {
         // Queue is active - build commands manually to preserve action data
         this.BuildQuickHackCommandsForQueue(puppetActions, commands);
+        QuickhackModule.RequestRefreshQuickhackMenu(this.GetGame(), this.GetEntityID());    
     }
 }
 
@@ -152,30 +153,59 @@ private func BuildQuickHackCommandsForQueue(
             newCommand.m_category = actionRecord.HackCategory();
             newCommand.m_actionMatchesTarget = actionMatchDeck;
 
-            if actionMatchDeck && IsDefined(matchedAction) {
-                newCommand.m_cost = matchedAction.GetCost();
-                
-                if matchedAction.IsInactive() {
-                    newCommand.m_isLocked = true;
-                    newCommand.m_inactiveReason = matchedAction.GetInactiveReason();
-                } else if !matchedAction.IsPossible(this) || !matchedAction.IsVisible(playerRef) {
-                    matchedAction.SetInactiveWithReason(false, "LocKey#7019");
-                    newCommand.m_isLocked = true;
-                    newCommand.m_inactiveReason = "LocKey#7019";
-                } else if !matchedAction.CanPayCost() {
-                    newCommand.m_actionState = EActionInactivityReson.OutOfMemory;
-                    matchedAction.SetInactiveWithReason(false, "LocKey#27398");
-                    newCommand.m_isLocked = true;
-                    newCommand.m_inactiveReason = "LocKey#27398";
-                } else {
-                    newCommand.m_actionState = EActionInactivityReson.Ready;
-                }
-                
-                newCommand.m_action = matchedAction;
-            } else {
-                newCommand.m_isLocked = true;
-                newCommand.m_inactiveReason = "LocKey#10943";
-            }
+            // Replace your current if-else-if chain with this structure:
+
+// Replace your current if-else-if chain with this structure:
+
+if actionMatchDeck && IsDefined(matchedAction) {
+    newCommand.m_cost = matchedAction.GetCost();
+    
+    // Start with unlocked state
+    newCommand.m_isLocked = false;
+    newCommand.m_actionState = EActionInactivityReson.Ready;
+    
+    // Check if action is already inactive (includes immunity checks)
+    if matchedAction.IsInactive() {
+        newCommand.m_isLocked = true;
+        newCommand.m_inactiveReason = matchedAction.GetInactiveReason();
+        newCommand.m_actionState = EActionInactivityReson.Locked;
+        puppetActions[i1].SetInactiveWithReason(false, "LocKey#40765");  
+    } else {
+        // Independent validation checks (similar to vanilla structure)
+        
+        // Check if action is not possible or visible
+        if !matchedAction.IsPossible(this) || !matchedAction.IsVisible(playerRef) {
+            matchedAction.SetInactiveWithReason(false, "LocKey#7019");
+            newCommand.m_isLocked = true;
+            newCommand.m_inactiveReason = "LocKey#7019";
+            newCommand.m_actionState = EActionInactivityReson.Locked;
+        }
+        
+        // Check RAM cost (independent of upload check)
+        if !matchedAction.CanPayCost() {
+            newCommand.m_actionState = EActionInactivityReson.OutOfMemory;
+            matchedAction.SetInactiveWithReason(false, "LocKey#27398");
+            newCommand.m_isLocked = true;
+            newCommand.m_inactiveReason = "LocKey#27398";
+        }
+        
+        // SKIP the upload check entirely - this is what your queue mod handles
+        // } else if GameInstance.GetStatPoolsSystem(this.GetGame())
+        //     .IsStatPoolAdded(Cast<StatsObjectID>(this.GetEntityID()), gamedataStatPoolType.QuickHackUpload) {
+        //     // REMOVED - queue mod allows queueing during uploads
+        // }
+        
+        // Always set the action reference if validation passed
+        if !newCommand.m_isLocked || this.HasActiveQuickHackUpload() {
+            newCommand.m_action = matchedAction;
+        }
+    }
+    
+} else {
+    // No matching action on cyberdeck
+    newCommand.m_isLocked = true;
+    newCommand.m_inactiveReason = "LocKey#10943";
+}
 
             ArrayPush(commands, newCommand);
         }
