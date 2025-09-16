@@ -212,7 +212,7 @@ public class QueueModActionQueue {
                 let targetID: EntityID = pa.GetRequesterID();
                 let target: ref<ScriptedPuppet> = GameInstance.FindEntityByID(GetGameInstance(), targetID) as ScriptedPuppet;
                 if IsDefined(target) && TDBID.IsValid(actionID) {
-                    target.QueueMod_RemoveFromCache(actionID);
+                    target.QueueMod_SetActiveVanillaUpload(actionID); // Set as active
                 }
             }
         }
