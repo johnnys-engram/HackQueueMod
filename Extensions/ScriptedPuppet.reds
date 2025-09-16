@@ -91,27 +91,44 @@ private func TranslateChoicesIntoQuickSlotCommands(
                 cmd.m_inactiveReason = "";
                 cmd.m_actionState = EActionInactivityReson.Ready;
                 
-                // Re-validate with other checks
-                //this.RevalidateCommandExcludingUpload(cmd, puppetActions);
+                // NOW check RAM cost using the command's stored cost values
+                // cmd.m_cost is the final calculated cost after all modifiers
+                let playerMemory: Float = GameInstance.GetStatPoolsSystem(this.GetGame())
+                    .GetStatPoolValue(Cast<StatsObjectID>(GetPlayer(this.GetGame()).GetEntityID()), gamedataStatPoolType.Memory, false);
+                
+                if Cast<Float>(cmd.m_cost) > playerMemory {
+                    // Re-lock due to insufficient RAM
+                    cmd.m_isLocked = true;
+                    cmd.m_inactiveReason = GetOutOfMemoryKey(); // "Insufficient RAM Available"
+                    cmd.m_actionState = EActionInactivityReson.OutOfMemory;
+                    
+                    QueueModLog(n"DEBUG", n"RAM_BLOCK", s"Blocked \(GetLocalizedText(cmd.m_title)) - Cost:\(cmd.m_cost) Available:\(playerMemory)");
+                } else {
+                    QueueModLog(n"DEBUG", n"RAM_OK", s"Allowed \(GetLocalizedText(cmd.m_title)) - Cost:\(cmd.m_cost) Available:\(playerMemory)");
+                }
             }
             i += 1;
         }
  
         QuickhackModule.RequestRefreshQuickhackMenu(this.GetGame(), this.GetEntityID());     
           
-        // Sync PuppetAction states
+        // Sync PuppetAction states with corrected command states
         let j: Int32 = 0;
         while j < ArraySize(commands) {
-            if IsDefined(commands[j]) && commands[j].m_isLocked && IsDefined(commands[j].m_action) {
+            if IsDefined(commands[j]) && IsDefined(commands[j].m_action) {
                 let puppetAction: ref<PuppetAction> = commands[j].m_action as PuppetAction;
                 if IsDefined(puppetAction) {
-                    puppetAction.SetInactiveWithReason(false, commands[j].m_inactiveReason);
+                    if commands[j].m_isLocked {
+                        puppetAction.SetInactiveWithReason(false, commands[j].m_inactiveReason);
+                    } else {
+                        puppetAction.SetInactiveWithReason(true, "");
+                    }
                 }
             }
             j += 1;
         }
         
-        QueueModLog(n"DEBUG", n"EVENTS", "Upload bypass with re-validation complete");
+        QueueModLog(n"DEBUG", n"EVENTS", "Upload bypass with RAM validation complete");
     }
 }
 
