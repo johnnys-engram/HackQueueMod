@@ -138,13 +138,13 @@ public class QueueModActionQueue {
             i += 1;
         }
         
-        // Calculate RAM cost
+        // Calculate RAM cost for tracking purposes only
         let ramCost: Int32 = 0;
         let sa: ref<ScriptableDeviceAction> = action as ScriptableDeviceAction;
         let pa: ref<PuppetAction> = action as PuppetAction;
         
         if IsDefined(sa) {
-            ramCost = this.QM_GetRamCostFromAction(sa);
+            ramCost = sa.GetCost();
             QueueModLog(n"DEBUG", n"RAM", s"Calculated RAM cost from ScriptableDeviceAction: \(ramCost)");
         } else if IsDefined(pa) {
             ramCost = pa.GetCost();
@@ -174,8 +174,6 @@ public class QueueModActionQueue {
             return false;
         }
         
-        QueueModLog(n"DEBUG", n"RAM", s"RAM already deducted on selection: \(ramCost)");
-        
         ArrayPush(this.m_queueEntries, entry);
         QueueModLog(n"DEBUG", n"QUEUE", s"Entry added: \(key), actionID=\(TDBID.ToStringDEBUG(actionID)), size=\(ArraySize(this.m_queueEntries))");
         return true;
@@ -203,32 +201,10 @@ public class QueueModActionQueue {
     }
 
     public func ClearQueue() -> Void {
-    let queueSize: Int32 = ArraySize(this.m_queueEntries);
-    
-    // Refund RAM for all queued actions using the same pattern as QM_RefundRAM
-    let player: ref<PlayerPuppet> = this.QM_GetPlayer(GetGameInstance());
-    if IsDefined(player) {
-        let sps: ref<StatPoolsSystem> = GameInstance.GetStatPoolsSystem(player.GetGame());
-        let oid: StatsObjectID = Cast<StatsObjectID>(player.GetEntityID());
-        
-        if sps.IsStatPoolAdded(oid, gamedataStatPoolType.Memory) {
-            let i: Int32 = 0;
-            while i < queueSize {
-                let entry: ref<QueueModEntry> = this.m_queueEntries[i];
-                if IsDefined(entry) && Equals(entry.entryType, GetActionEntryType()) && entry.ramCost > 0 {
-                    let refundAmount: Float = Cast<Float>(entry.ramCost);
-                    // Use same v1.63 signature as ScriptedPuppet QM_RefundRAM method
-                    sps.RequestChangingStatPoolValue(oid, gamedataStatPoolType.Memory, refundAmount, player, true, false);
-                    QueueModLog(n"DEBUG", n"RAM", s"Refunded RAM: \(entry.ramCost)");
-                }
-                i += 1;
-            }
-        }
+        let queueSize: Int32 = ArraySize(this.m_queueEntries);
+        ArrayClear(this.m_queueEntries);
+        QueueModLog(n"DEBUG", n"QUEUE", s"Queue cleared - \(queueSize) entries removed");
     }
-    
-    ArrayClear(this.m_queueEntries);
-    QueueModLog(n"DEBUG", n"QUEUE", s"Queue cleared - RAM refunded for \(queueSize) entries");
-}
 
     public func ClearQueue(gameInstance: GameInstance, targetID: EntityID) -> Void {
         this.ClearQueue();
@@ -290,32 +266,5 @@ public class QueueModActionQueue {
         this.m_queueEntries = cleanEntries;
         
         QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod] Emergency cleanup complete - \(ArraySize(this.m_queueEntries)) entries recovered");
-    }
-    
-    // RAM Helper Methods
-    private func QM_GetPlayer(game: GameInstance) -> ref<PlayerPuppet> {
-        let ps: ref<PlayerSystem> = GameInstance.GetPlayerSystem(game);
-        if !IsDefined(ps) {
-            QueueModLog(n"ERROR", n"RAM", "Cannot get player - PlayerSystem is null");
-            return null;
-        }
-        
-        let player: ref<PlayerPuppet> = ps.GetLocalPlayerMainGameObject() as PlayerPuppet;
-        if !IsDefined(player) {
-            QueueModLog(n"ERROR", n"RAM", "Cannot get player - LocalPlayerMainGameObject is null");
-            return null;
-        }
-        
-        return player;
-    }
-    
-    private func QM_GetRamCostFromAction(action: ref<ScriptableDeviceAction>) -> Int32 {
-        if !IsDefined(action) {
-            QueueModLog(n"WARN", n"RAM", "Cannot get RAM cost - action is null");
-            return 0;
-        }
-        
-        let cost: Int32 = action.GetCost();
-        return Max(cost, 0);
     }
 }

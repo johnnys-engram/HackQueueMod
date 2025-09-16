@@ -274,18 +274,10 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
             this.GetQueueModActionQueue().LockQueue();
             
             // Use ProcessRPGAction for reliable post-upload execution
+            // Cost override ensures no double deduction
             QueueModLog(n"DEBUG", n"QUICKHACK", s"Processing PuppetAction RPG for target: \(GetLocalizedText(this.GetDisplayName()))");
-            
-            // Direct execution since RAM already deducted during queuing
-            let originalRamCost: Int32 = paExec.GetCost();
 
-             paExec.ProcessRPGAction(this.GetGame());
-
-            // Immediately refund the double-deduction
-            if originalRamCost > 0 {
-                this.QM_RefundRAM(originalRamCost);
-                QueueModLog(n"DEBUG", n"RAM", s"Refunded ProcessRPGAction RAM: \(originalRamCost)");
-            }
+            paExec.ProcessRPGAction(this.GetGame());
 
             // Check immediately after execution
             if this.IsDead() || StatusEffectSystem.ObjectHasStatusEffectWithTag(this, n"Dead") || 
@@ -303,28 +295,6 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
     } else {
         QueueModLog(n"ERROR", n"QUEUE", s"Invalid entry type: \(entry.entryType)");
     }
-}
-
-@addMethod(ScriptedPuppet)
-private final func QM_RefundRAM(amount: Int32) -> Bool {
-    let player: ref<PlayerPuppet> = GameInstance.GetPlayerSystem(this.GetGame()).GetLocalPlayerControlledGameObject() as PlayerPuppet;
-    if !IsDefined(player) {
-        return false;
-    }
-    
-    let sps: ref<StatPoolsSystem> = GameInstance.GetStatPoolsSystem(this.GetGame());
-    let oid: StatsObjectID = Cast<StatsObjectID>(player.GetEntityID());
-    
-    if !sps.IsStatPoolAdded(oid, gamedataStatPoolType.Memory) {
-        return false;
-    }
-    
-    let refundAmount: Float = Cast<Float>(amount);
-    
-    // v1.63 signature: (oid, poolType, value, instigator, useOldValue, isPercentage)
-    sps.RequestChangingStatPoolValue(oid, gamedataStatPoolType.Memory, refundAmount, player, true, false);
-    
-    return true;
 }
 
 // Event-driven cleanup for death/unconscious status effects

@@ -21,6 +21,29 @@ public func GetBlockedKey() -> String { return "LocKey#40765"; }
 public func GetInvalidActionKey() -> String { return "LocKey#7019"; }
 
 // =============================================================================
+// COST OVERRIDE SYSTEM FOR QUEUED ACTIONS
+// =============================================================================
+
+@addField(BaseScriptableAction)
+private let m_queueModCostOverride: Bool;
+
+@addMethod(BaseScriptableAction)
+public func QueueMod_SetCostOverride(override: Bool) -> Void {
+    this.m_queueModCostOverride = override;
+}
+
+@wrapMethod(BaseScriptableAction)
+public func GetCost() -> Int32 {
+    // If this action is marked as queued, return 0 cost to prevent double deduction
+    if this.m_queueModCostOverride {
+        return 0;
+    }
+    
+    // Otherwise use vanilla cost calculation
+    return wrappedMethod();
+}
+
+// =============================================================================
 // QUICKHACKS LIST GAME CONTROLLER EXTENSIONS
 // =============================================================================
 
@@ -169,7 +192,7 @@ private func ApplyQuickHack() -> Bool {
     QueueModLog(n"DEBUG", n"QUEUE", s"Should queue: \(shouldQueue)");
 
     if shouldQueue {
-        // Only deduct RAM if we're actually going to queue
+        // Validate we have necessary systems for queuing
         let playerSystem: ref<PlayerSystem> = GameInstance.GetPlayerSystem(this.m_gameInstance);
         if !IsDefined(playerSystem) {
             QueueModLog(n"ERROR", n"QUICKHACK", "Cannot get PlayerSystem - executing normally");
@@ -180,21 +203,6 @@ private func ApplyQuickHack() -> Bool {
         if !IsDefined(player) {
             QueueModLog(n"ERROR", n"QUICKHACK", "Cannot get player - executing normally");
             return wrappedMethod();
-        }
-        
-        // Check RAM availability
-        if this.m_selectedData.m_cost > 0 {
-            let sps: ref<StatPoolsSystem> = GameInstance.GetStatPoolsSystem(this.m_gameInstance);
-            if !IsDefined(sps) {
-                QueueModLog(n"ERROR", n"RAM", "Cannot get StatPoolsSystem - executing normally");
-                return wrappedMethod();
-            }
-            
-            let freeRam: Float = sps.GetStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Memory, false);
-            if Cast<Float>(this.m_selectedData.m_cost) > freeRam {
-                QueueModLog(n"ERROR", n"RAM", s"Insufficient RAM for \(actionName): \(this.m_selectedData.m_cost) > \(freeRam) - executing normally");
-                return wrappedMethod();
-            }
         }
 
         // Try to use the original action first, fallback to reconstruction
@@ -211,19 +219,6 @@ private func ApplyQuickHack() -> Bool {
         }
         
         if IsDefined(actionToQueue) {
-            // Get player reference for queuing
-            let playerSystem: ref<PlayerSystem> = GameInstance.GetPlayerSystem(this.m_gameInstance);
-            if !IsDefined(playerSystem) {
-                QueueModLog(n"ERROR", n"QUEUE", "Cannot get PlayerSystem for queuing");
-                return false;
-            }
-            
-            let player: ref<PlayerPuppet> = playerSystem.GetLocalPlayerMainGameObject() as PlayerPuppet;
-            if !IsDefined(player) {
-                QueueModLog(n"ERROR", n"QUEUE", "Cannot get player for queuing");
-                return false;
-            }
-            
             let queueHelper: ref<QueueModHelper> = player.GetQueueModHelper();
             if !IsDefined(queueHelper) {
                 QueueModLog(n"ERROR", n"QUEUE", "Cannot get QueueModHelper - cannot queue action");
@@ -240,17 +235,14 @@ private func ApplyQuickHack() -> Bool {
             
             let wasQueued: Bool = queueHelper.PutInQuickHackQueueWithKey(actionToQueue, uniqueKey);
             if wasQueued {
-                // IMMEDIATELY deduct RAM upon successful queuing to prevent race conditions
-                if this.m_selectedData.m_cost > 0 {
-                    let sps: ref<StatPoolsSystem> = GameInstance.GetStatPoolsSystem(this.m_gameInstance);
-                    let oid: StatsObjectID = Cast<StatsObjectID>(player.GetEntityID());
-                    let ramToDeduct: Float = -Cast<Float>(this.m_selectedData.m_cost);
-                    
-                    sps.RequestChangingStatPoolValue(oid, gamedataStatPoolType.Memory, ramToDeduct, player, true, false);
-                    QueueModLog(n"DEBUG", n"RAM", s"Deducted RAM immediately upon queuing: \(this.m_selectedData.m_cost)");
+                // Mark action as having cost override to prevent double deduction
+                let scriptableAction: ref<BaseScriptableAction> = actionToQueue as BaseScriptableAction;
+                if IsDefined(scriptableAction) {
+                    scriptableAction.QueueMod_SetCostOverride(true);
+                    QueueModLog(n"DEBUG", n"RAM", "Cost override set - ProcessRPGAction will see 0 cost");
                 }
                 
-                QueueModLog(n"DEBUG", n"QUICKHACK", s"Executing queued hack: \(actionName) (RAM deducted, queued for execution)");
+                QueueModLog(n"DEBUG", n"QUICKHACK", s"Executing queued hack: \(actionName) (vanilla RAM handling with cost override)");
                 QueueModLog(n"DEBUG", n"QUEUE", s"Queued action: \(actionName) class=\(actionToQueue.GetClassName())");
                 this.ApplyQueueModCooldownWithData(this.m_selectedData);
                 
@@ -266,8 +258,8 @@ private func ApplyQuickHack() -> Bool {
             return false;
         }
     } else {
-        // For non-queued hacks, execute normally - let vanilla handle RAM deduction
-        QueueModLog(n"DEBUG", n"QUICKHACK", "Executing non-queued hack normally (vanilla handles RAM)");
+        // For non-queued hacks, execute normally - let vanilla handle everything
+        QueueModLog(n"DEBUG", n"QUICKHACK", "Executing non-queued hack normally (vanilla handles all)");
         return wrappedMethod();
     }
     
