@@ -240,6 +240,16 @@ private func ApplyQuickHack() -> Bool {
             
             let wasQueued: Bool = queueHelper.PutInQuickHackQueueWithKey(actionToQueue, uniqueKey);
             if wasQueued {
+                // IMMEDIATELY deduct RAM upon successful queuing to prevent race conditions
+                if this.m_selectedData.m_cost > 0 {
+                    let sps: ref<StatPoolsSystem> = GameInstance.GetStatPoolsSystem(this.m_gameInstance);
+                    let oid: StatsObjectID = Cast<StatsObjectID>(player.GetEntityID());
+                    let ramToDeduct: Float = -Cast<Float>(this.m_selectedData.m_cost);
+                    
+                    sps.RequestChangingStatPoolValue(oid, gamedataStatPoolType.Memory, ramToDeduct, player, true, false);
+                    QueueModLog(n"DEBUG", n"RAM", s"Deducted RAM immediately upon queuing: \(this.m_selectedData.m_cost)");
+                }
+                
                 QueueModLog(n"DEBUG", n"QUICKHACK", s"Executing queued hack: \(actionName) (RAM deducted, queued for execution)");
                 QueueModLog(n"DEBUG", n"QUEUE", s"Queued action: \(actionName) class=\(actionToQueue.GetClassName())");
                 this.ApplyQueueModCooldownWithData(this.m_selectedData);
