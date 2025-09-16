@@ -203,23 +203,32 @@ public class QueueModActionQueue {
     }
 
     public func ClearQueue() -> Void {
-        let queueSize: Int32 = ArraySize(this.m_queueEntries);
+    let queueSize: Int32 = ArraySize(this.m_queueEntries);
+    
+    // Refund RAM for all queued actions using the same pattern as QM_RefundRAM
+    let player: ref<PlayerPuppet> = this.QM_GetPlayer(GetGameInstance());
+    if IsDefined(player) {
+        let sps: ref<StatPoolsSystem> = GameInstance.GetStatPoolsSystem(player.GetGame());
+        let oid: StatsObjectID = Cast<StatsObjectID>(player.GetEntityID());
         
-        // Refund RAM for all queued actions using the unified refund method
-        let i: Int32 = 0;
-        while i < queueSize {
-            let entry: ref<QueueModEntry> = this.m_queueEntries[i];
-            if IsDefined(entry) && Equals(entry.entryType, GetActionEntryType()) && entry.ramCost > 0 {
-                // Use the ScriptedPuppet QM_RefundRAM method for consistency
-                this.RefundEntryRAM(entry);
-                QueueModLog(n"DEBUG", n"RAM", s"Refunded RAM: \(entry.ramCost)");
+        if sps.IsStatPoolAdded(oid, gamedataStatPoolType.Memory) {
+            let i: Int32 = 0;
+            while i < queueSize {
+                let entry: ref<QueueModEntry> = this.m_queueEntries[i];
+                if IsDefined(entry) && Equals(entry.entryType, GetActionEntryType()) && entry.ramCost > 0 {
+                    let refundAmount: Float = Cast<Float>(entry.ramCost);
+                    // Use same v1.63 signature as ScriptedPuppet QM_RefundRAM method
+                    sps.RequestChangingStatPoolValue(oid, gamedataStatPoolType.Memory, refundAmount, player, true, false);
+                    QueueModLog(n"DEBUG", n"RAM", s"Refunded RAM: \(entry.ramCost)");
+                }
+                i += 1;
             }
-            i += 1;
         }
-        
-        ArrayClear(this.m_queueEntries);
-        QueueModLog(n"DEBUG", n"QUEUE", s"Queue cleared - RAM refunded for \(queueSize) entries");
     }
+    
+    ArrayClear(this.m_queueEntries);
+    QueueModLog(n"DEBUG", n"QUEUE", s"Queue cleared - RAM refunded for \(queueSize) entries");
+}
 
     public func ClearQueue(gameInstance: GameInstance, targetID: EntityID) -> Void {
         this.ClearQueue();
