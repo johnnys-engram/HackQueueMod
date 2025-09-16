@@ -120,6 +120,8 @@ private func BuildQuickHackCommandsForQueue(
     let actionOwnerName: CName = StringToName(this.GetTweakDBFullDisplayName(true));
     let iceLVL: Float = this.GetICELevel();
     let playerQHacksList: array<PlayerQuickhackData> = RPGManager.GetPlayerQuickHackListWithQuality(playerRef);
+    let actionStartEffects: array<wref<ObjectActionEffect_Record>>;  // ADD THIS
+    let statModifiers: array<wref<StatModifier_Record>>;             // ADD THIS
 
     //QueueModLog(n"DEBUG", n"QUEUE", s"Building queue commands, cache size: \(ArraySize(this.m_queuedActionIDs))");
 
@@ -164,8 +166,23 @@ private func BuildQuickHackCommandsForQueue(
                 }
                 i1 += 1;
             }
-
-            // Rest of the command building logic...
+            // ADD VANILLA COOLDOWN CODE HERE (exactly as shown above)
+            ArrayClear(actionStartEffects);
+            actionRecord.StartEffects(actionStartEffects);
+            let i1: Int32 = 0;
+            while i1 < ArraySize(actionStartEffects) {
+                if Equals(actionStartEffects[i1].StatusEffect().StatusEffectType().Type(), gamedataStatusEffectType.PlayerCooldown) {
+                    actionStartEffects[i1].StatusEffect().Duration().StatModifiers(statModifiers);
+                    newCommand.m_cooldown = RPGManager.CalculateStatModifiers(statModifiers, this.GetGame(), playerRef, Cast<StatsObjectID>(playerRef.GetEntityID()), Cast<StatsObjectID>(playerRef.GetEntityID()));
+                    newCommand.m_cooldownTweak = actionStartEffects[i1].StatusEffect().GetID();
+                    ArrayClear(statModifiers);
+                }
+                if newCommand.m_cooldown != 0.00 {
+                    break;
+                }
+                i1 += 1;
+            }
+            ArrayClear(statModifiers);
             newCommand.m_actionOwnerName = actionOwnerName;
             newCommand.m_actionOwner = this.GetEntityID();
             newCommand.m_title = LocKeyToString(actionRecord.ObjectActionUI().Caption());
@@ -189,36 +206,29 @@ private func BuildQuickHackCommandsForQueue(
             } else {
                 if actionMatchDeck && IsDefined(matchedAction) {
                     newCommand.m_cost = matchedAction.GetCost();
-                    
-                    // FAST DUPLICATE CHECK - O(1) performance
                     if ArrayContains(this.m_queuedActionIDs, matchedAction.GetObjectActionID()) {
                         newCommand.m_isLocked = true;
                         newCommand.m_inactiveReason = GetBlockedKey();
                         newCommand.m_actionState = EActionInactivityReson.Locked;
-                        QueueModLog(n"DEBUG", n"QUEUE", s"Blocked duplicate: \(GetLocalizedText(newCommand.m_title))");
-                    } else {
+                        newCommand.m_action = matchedAction;
+                    } else if newCommand.m_cooldown > 0.00 && StatusEffectSystem.ObjectHasStatusEffect(playerRef, newCommand.m_cooldownTweak) {
+                            newCommand.m_isLocked = true;
+                            newCommand.m_inactiveReason = "LocKey#27399"; // Or appropriate cooldown message
+                            newCommand.m_actionState = EActionInactivityReson.Locked;
+                            newCommand.m_action = matchedAction;
+                        } else {
                         // Vanilla structure: Check IsInactive first
                         if matchedAction.IsInactive() {
                             newCommand.m_isLocked = true;
                             newCommand.m_inactiveReason = matchedAction.GetInactiveReason();
-                            // newCommand.m_actionState stays as Locked (default from above)
-                            
-                            // Vanilla action assignment for inactive actions
-                            if this.HasActiveQuickHackUpload() {
-                                newCommand.m_action = matchedAction;
-                            }
+                            newCommand.m_actionState = EActionInactivityReson.Locked; //stays as Locked (default from above)
+                            newCommand.m_action = matchedAction;
                         } else {
                             // Action is active - check RAM cost
                             if !matchedAction.CanPayCost() {
                                 newCommand.m_actionState = EActionInactivityReson.OutOfMemory;
                                 newCommand.m_isLocked = true;
                                 newCommand.m_inactiveReason = "LocKey#27398";
-                            }
-                            
-                            // REMOVED: Upload check - this is what queue mod handles
-                            
-                            // Set action reference using vanilla condition
-                            if !matchedAction.IsInactive() || this.HasActiveQuickHackUpload() {
                                 newCommand.m_action = matchedAction;
                             }
                         }
@@ -231,10 +241,10 @@ private func BuildQuickHackCommandsForQueue(
                 }
             }
 
-// Set final state if not locked
-if !newCommand.m_isLocked {
-    newCommand.m_actionState = EActionInactivityReson.Ready;
-}
+        // Set final state if not locked
+        if !newCommand.m_isLocked {
+            newCommand.m_actionState = EActionInactivityReson.Ready;
+        }
 
             ArrayPush(commands, newCommand);
         }
