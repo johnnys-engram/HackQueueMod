@@ -21,29 +21,6 @@ public func GetBlockedKey() -> String { return "LocKey#40765"; }
 public func GetInvalidActionKey() -> String { return "LocKey#7019"; }
 
 // =============================================================================
-// COST OVERRIDE SYSTEM FOR QUEUED ACTIONS
-// =============================================================================
-
-@addField(BaseScriptableAction)
-private let m_queueModCostOverride: Bool;
-
-@addMethod(BaseScriptableAction)
-public func QueueMod_SetCostOverride(override: Bool) -> Void {
-    this.m_queueModCostOverride = override;
-}
-
-@wrapMethod(BaseScriptableAction)
-public func GetCost() -> Int32 {
-    // If this action is marked as queued, return 0 cost to prevent double deduction
-    if (this.m_queueModCostOverride) {
-        return 0;
-    }
-    
-    // Otherwise use vanilla cost calculation
-    return wrappedMethod();
-}
-
-// =============================================================================
 // Cooldown Detection and Management
 // =============================================================================
 
@@ -136,11 +113,6 @@ private func QueueMod_HandleQueuedExecution() -> Bool {
         return false;
     }
 
-    // Set cost override BEFORE any operations
-    if (IsDefined(scriptableAction)) {
-        scriptableAction.QueueMod_SetCostOverride(true);
-    }
-
     // Try to queue
     let queueHelper: ref<QueueModHelper> = player.GetQueueModHelper();
     let uniqueKey: String = s"\(ToString(targetID))::\(actionName)::\(GameInstance.GetTimeSystem(this.m_gameInstance).GetSimTime())";
@@ -155,10 +127,6 @@ private func QueueMod_HandleQueuedExecution() -> Bool {
         QueueModLog(n"DEBUG", n"QUEUE", s"Successfully queued: \(actionName)");
         return true;
     } else {
-        // Failed to queue - clear override
-        if (IsDefined(scriptableAction)) {
-            scriptableAction.QueueMod_SetCostOverride(false);
-        }
         QueueModLog(n"ERROR", n"QUEUE", s"Failed to queue: \(actionName)");
         return false;
     }
