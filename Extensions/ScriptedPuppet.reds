@@ -157,54 +157,59 @@ private func BuildQuickHackCommandsForQueue(
 
 // Replace your current if-else-if chain with this structure:
 
-if actionMatchDeck && IsDefined(matchedAction) {
-    newCommand.m_cost = matchedAction.GetCost();
-    
-    // Start with unlocked state
-    newCommand.m_isLocked = false;
-    newCommand.m_actionState = EActionInactivityReson.Ready;
-    
-    // Check if action is already inactive (includes immunity checks)
-    if matchedAction.IsInactive() {
-        newCommand.m_isLocked = true;
-        newCommand.m_inactiveReason = matchedAction.GetInactiveReason();
-        newCommand.m_actionState = EActionInactivityReson.Locked;
-        puppetActions[i1].SetInactiveWithReason(false, "LocKey#40765");  
-    } else {
-        // Independent validation checks (similar to vanilla structure)
-        
-        // Check if action is not possible or visible
-        if !matchedAction.IsPossible(this) || !matchedAction.IsVisible(playerRef) {
-            matchedAction.SetInactiveWithReason(false, "LocKey#7019");
-            newCommand.m_isLocked = true;
-            newCommand.m_inactiveReason = "LocKey#7019";
-            newCommand.m_actionState = EActionInactivityReson.Locked;
-        }
-        
-        // Check RAM cost (independent of upload check)
-        if !matchedAction.CanPayCost() {
-            newCommand.m_actionState = EActionInactivityReson.OutOfMemory;
-            matchedAction.SetInactiveWithReason(false, "LocKey#27398");
-            newCommand.m_isLocked = true;
-            newCommand.m_inactiveReason = "LocKey#27398";
-        }
-        
-        // SKIP the upload check entirely - this is what your queue mod handles
-        // } else if GameInstance.GetStatPoolsSystem(this.GetGame())
-        //     .IsStatPoolAdded(Cast<StatsObjectID>(this.GetEntityID()), gamedataStatPoolType.QuickHackUpload) {
-        //     // REMOVED - queue mod allows queueing during uploads
-        // }
-        
-        // Always set the action reference if validation passed
-        if !newCommand.m_isLocked || this.HasActiveQuickHackUpload() {
-            newCommand.m_action = matchedAction;
-        }
-    }
-    
-} else {
-    // No matching action on cyberdeck
+// Check for NotAHack category first
+if IsDefined(newCommand.m_category) && Equals(newCommand.m_category.EnumName(), n"NotAHack") {
     newCommand.m_isLocked = true;
-    newCommand.m_inactiveReason = "LocKey#10943";
+    newCommand.m_inactiveReason = GetBlockedKey();
+    newCommand.m_actionState = EActionInactivityReson.Locked;
+} else {
+    if actionMatchDeck && IsDefined(matchedAction) {
+        newCommand.m_cost = matchedAction.GetCost();
+        
+        // FAST DUPLICATE CHECK - O(1) performance
+        if ArrayContains(this.m_queuedActionIDs, matchedAction.GetObjectActionID()) {
+            newCommand.m_isLocked = true;
+            newCommand.m_inactiveReason = GetBlockedKey();
+            newCommand.m_actionState = EActionInactivityReson.Locked;
+            QueueModLog(n"DEBUG", n"QUEUE", s"Blocked duplicate: \(GetLocalizedText(newCommand.m_title))");
+        } else {
+            // Vanilla structure: Check IsInactive first
+            if matchedAction.IsInactive() {
+                newCommand.m_isLocked = true;
+                newCommand.m_inactiveReason = matchedAction.GetInactiveReason();
+                // newCommand.m_actionState stays as Locked (default from above)
+                
+                // Vanilla action assignment for inactive actions
+                if this.HasActiveQuickHackUpload() {
+                    newCommand.m_action = matchedAction;
+                }
+            } else {
+                // Action is active - check RAM cost
+                if !matchedAction.CanPayCost() {
+                    newCommand.m_actionState = EActionInactivityReson.OutOfMemory;
+                    newCommand.m_isLocked = true;
+                    newCommand.m_inactiveReason = "LocKey#27398";
+                }
+                
+                // REMOVED: Upload check - this is what queue mod handles
+                
+                // Set action reference using vanilla condition
+                if !matchedAction.IsInactive() || this.HasActiveQuickHackUpload() {
+                    newCommand.m_action = matchedAction;
+                }
+            }
+        }
+    } else {
+        // No matching action on cyberdeck
+        newCommand.m_isLocked = true;
+        newCommand.m_inactiveReason = "LocKey#10943";
+        newCommand.m_actionState = EActionInactivityReson.Invalid;
+    }
+}
+
+// Set final state if not locked
+if !newCommand.m_isLocked {
+    newCommand.m_actionState = EActionInactivityReson.Ready;
 }
 
             ArrayPush(commands, newCommand);
