@@ -150,14 +150,34 @@ QueueModLog(n"DEBUG", n"RAM", s"Final RAM state: Cost=\(costInt) (\(costFloat)),
 
             if wasQueued {        
                 // IMMEDIATELY deduct RAM upon successful queuing to prevent race conditions
-                if this.m_selectedData.m_cost > 0 {
-                    let sps: ref<StatPoolsSystem> = GameInstance.GetStatPoolsSystem(this.m_gameInstance);
-                    let oid: StatsObjectID = Cast<StatsObjectID>(player.GetEntityID());
-                    let ramToDeduct: Float = -Cast<Float>(this.m_selectedData.m_cost);
-                    
-                    sps.RequestChangingStatPoolValue(oid, gamedataStatPoolType.Memory, ramToDeduct, player, true, false);
-                    QueueModLog(n"DEBUG", n"RAM", s"Deducted RAM immediately upon queuing: \(this.m_selectedData.m_cost)");
-                }    
+// Replace your RAM deduction section with this:
+if this.m_selectedData.m_cost > 0 {
+    let sps: ref<StatPoolsSystem> = GameInstance.GetStatPoolsSystem(this.m_gameInstance);
+    let oid: StatsObjectID = Cast<StatsObjectID>(player.GetEntityID());
+    
+    // Log BEFORE deduction
+    let ramBefore: Float = sps.GetStatPoolValue(oid, gamedataStatPoolType.Memory, false);
+    let ramBeforeInt: Int32 = Cast<Int32>(ramBefore);
+    
+    let costToDeduct: Int32 = this.m_selectedData.m_cost;
+    let ramToDeduct: Float = -Cast<Float>(costToDeduct);
+    
+    QueueModLog(n"DEBUG", n"RAM", s"BEFORE: RAM=\(ramBeforeInt) (\(ramBefore)), Deducting=\(costToDeduct) (\(ramToDeduct))");
+    
+    // Perform deduction
+    sps.RequestChangingStatPoolValue(oid, gamedataStatPoolType.Memory, ramToDeduct, player, true, false);
+    
+    // Log AFTER deduction (immediate check)
+    let ramAfter: Float = sps.GetStatPoolValue(oid, gamedataStatPoolType.Memory, false);
+    let ramAfterInt: Int32 = Cast<Int32>(ramAfter);
+    let actualDeducted: Int32 = ramBeforeInt - ramAfterInt;
+    
+    QueueModLog(n"DEBUG", n"RAM", s"AFTER: RAM=\(ramAfterInt) (\(ramAfter)), ActualDeducted=\(actualDeducted)");
+    
+    if actualDeducted != costToDeduct {
+        QueueModLog(n"ERROR", n"RAM", s"MISMATCH: Expected=\(costToDeduct), Actual=\(actualDeducted), Difference=\(costToDeduct - actualDeducted)");
+    }
+} 
                 this.ApplyQueueModCooldownWithData(this.m_selectedData);
                 // Mark action as having cost override to prevent double deduction
                 let scriptableAction: ref<BaseScriptableAction> = actionToQueue as BaseScriptableAction;
@@ -171,7 +191,6 @@ QueueModLog(n"DEBUG", n"RAM", s"Final RAM state: Cost=\(costInt) (\(costFloat)),
                 this.QM_FireQueueEvent(n"ItemAdded", this.m_selectedData);
                 return true;
             } else {
-                QueueModLog(n"DEBUG", n"QUEUE", s"Failed to queue action: \(actionName)");
                 QueueModLog(n"DEBUG", n"QUEUE", s"Failed to queue action: \(actionName) - RAM cost: \(this.m_selectedData.m_cost)");
                 return false;
             }
