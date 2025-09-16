@@ -197,15 +197,30 @@ private func ApplyQuickHack() -> Bool {
         let playerSystem: ref<PlayerSystem> = GameInstance.GetPlayerSystem(this.m_gameInstance);
         let player: ref<PlayerPuppet> = playerSystem.GetLocalPlayerMainGameObject() as PlayerPuppet;
     
-        // Check RAM availability
-        if this.m_selectedData.m_cost > 0 {
-            let sps: ref<StatPoolsSystem> = GameInstance.GetStatPoolsSystem(this.m_gameInstance);            
-            let freeRam: Float = sps.GetStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Memory, false);
-            if Cast<Float>(this.m_selectedData.m_cost) > freeRam {
-                QueueModLog(n"ERROR", n"RAM", s"Insufficient RAM for \(actionName): \(this.m_selectedData.m_cost) > \(freeRam) - executing normally");
-                return wrappedMethod();
-            }
-        }
+// Check RAM availability
+if this.m_selectedData.m_cost > 0 {
+    let sps: ref<StatPoolsSystem> = GameInstance.GetStatPoolsSystem(this.m_gameInstance);            
+    let freeRamFloat: Float = sps.GetStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Memory, false);
+    let freeRamInt: Int32 = Cast<Int32>(freeRamFloat);
+    let costFloat: Float = Cast<Float>(this.m_selectedData.m_cost);
+    let costInt: Int32 = this.m_selectedData.m_cost;
+    
+    // Always log these values
+    QueueModLog(n"DEBUG", n"RAM", s"RAM Check: Cost=\(costInt) (\(costFloat)), Available=\(freeRamInt) (\(freeRamFloat))");
+    
+    if costFloat > freeRamFloat {
+        QueueModLog(n"ERROR", n"RAM", s"Insufficient RAM for \(actionName): \(costInt) > \(freeRamInt) - executing normally");
+        return wrappedMethod();
+    }
+}
+
+// Always log the final values here too, outside the cost check
+let sps: ref<StatPoolsSystem> = GameInstance.GetStatPoolsSystem(this.m_gameInstance);            
+let freeRamFloat: Float = sps.GetStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Memory, false);
+let freeRamInt: Int32 = Cast<Int32>(freeRamFloat);
+let costFloat: Float = Cast<Float>(this.m_selectedData.m_cost);
+let costInt: Int32 = this.m_selectedData.m_cost;
+QueueModLog(n"DEBUG", n"RAM", s"Final RAM state: Cost=\(costInt) (\(costFloat)), Available=\(freeRamInt) (\(freeRamFloat))");
 
         // Try to use the original action first, fallback to reconstruction
         let actionToQueue: ref<DeviceAction> = null;
@@ -215,9 +230,7 @@ private func ApplyQuickHack() -> Bool {
             actionToQueue = this.m_selectedData.m_action;
             QueueModLog(n"DEBUG", n"QUEUE", s"Using original action: \(actionToQueue.GetClassName())");
         } else {
-            // Fallback to reconstruction only if no action reference
-            actionToQueue = this.ReconstructActionFromData(this.m_selectedData);
-            QueueModLog(n"DEBUG", n"QUEUE", s"Reconstructed action from metadata: \(GetLocalizedText(this.m_selectedData.m_title))");
+                return wrappedMethod();
         }
         
         if IsDefined(actionToQueue) {
@@ -249,7 +262,8 @@ private func ApplyQuickHack() -> Bool {
                 this.QM_FireQueueEvent(n"ItemAdded", this.m_selectedData);
                 return true;
             } else {
-                QueueModLog(n"ERROR", n"QUEUE", s"Failed to queue action: \(actionName)");
+                QueueModLog(n"DEBUG", n"QUEUE", s"Failed to queue action: \(actionName)");
+                QueueModLog(n"DEBUG", n"QUEUE", s"Failed to queue action: \(actionName) - RAM cost: \(this.m_selectedData.m_cost)");
                 return false;
             }
         } else {
