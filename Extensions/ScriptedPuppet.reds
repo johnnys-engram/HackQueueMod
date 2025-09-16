@@ -74,67 +74,127 @@ private func TranslateChoicesIntoQuickSlotCommands(
     let hasQueued: Bool = IsDefined(this.GetQueueModActionQueue()) 
         && this.GetQueueModActionQueue().GetQueueSize() > 0;
     
-    // Call vanilla first - all values, costs, cooldowns, prereqs set correctly
-    wrappedMethod(puppetActions, commands);
-    
-    if (isOngoingUpload || hasQueued) && this.IsQueueModEnabled() && !this.IsQueueModFull() {
-        let i: Int32 = 0;
-        while i < ArraySize(commands) {
-            let cmd = commands[i];
-            if IsDefined(cmd) 
-                && cmd.m_isLocked 
-                && Equals(cmd.m_type, gamedataObjectActionType.PuppetQuickHack) 
-                && Equals(cmd.m_inactiveReason, GetUploadInProgressKey()) {
-
-                // Unlock upload-blocked command
-                cmd.m_isLocked = false;
-                cmd.m_inactiveReason = "";
-                cmd.m_actionState = EActionInactivityReson.Ready;
-                
-                // NOW check RAM cost using the command's stored cost values
-                // cmd.m_cost is the final calculated cost after all modifiers
-                let playerMemory: Float = GameInstance.GetStatPoolsSystem(this.GetGame())
-                    .GetStatPoolValue(Cast<StatsObjectID>(GetPlayer(this.GetGame()).GetEntityID()), gamedataStatPoolType.Memory, false);
-
-                if IsDefined(cmd.m_category) && Equals(cmd.m_category.EnumName(), n"NotAHack") {
-                    cmd.m_isLocked = true;
-                    cmd.m_inactiveReason = GetBlockedKey();
-                    cmd.m_actionState = EActionInactivityReson.Locked;
-                }
-                
-                if Cast<Float>(cmd.m_cost) > playerMemory {
-                    // Re-lock due to insufficient RAM
-                    cmd.m_isLocked = true;
-                    cmd.m_inactiveReason = GetOutOfMemoryKey(); // "Insufficient RAM Available"
-                    cmd.m_actionState = EActionInactivityReson.OutOfMemory;
-                    
-                    QueueModLog(n"DEBUG", n"RAM_BLOCK", s"Blocked \(GetLocalizedText(cmd.m_title)) - Cost:\(cmd.m_cost) Available:\(playerMemory)");
-                } else {
-                    QueueModLog(n"DEBUG", n"RAM_OK", s"Allowed \(GetLocalizedText(cmd.m_title)) - Cost:\(cmd.m_cost) Available:\(playerMemory)");
-                }
-            }
-            i += 1;
-        }
- 
-        QuickhackModule.RequestRefreshQuickhackMenu(this.GetGame(), this.GetEntityID());     
-          
-        // Sync PuppetAction states with corrected command states
-        let j: Int32 = 0;
-        while j < ArraySize(commands) {
-            if IsDefined(commands[j]) && IsDefined(commands[j].m_action) {
-                let puppetAction: ref<PuppetAction> = commands[j].m_action as PuppetAction;
-                if IsDefined(puppetAction) {
-                    if commands[j].m_isLocked {
-                        puppetAction.SetInactiveWithReason(false, commands[j].m_inactiveReason);
-                    } else {
-                        puppetAction.SetInactiveWithReason(true, "");
-                    }
-                }
-            }
-            j += 1;
-        }
-        
+    if !(isOngoingUpload || hasQueued) || !this.IsQueueModEnabled() || this.IsQueueModFull() {
+        // Queue not active - use vanilla behavior
+        wrappedMethod(puppetActions, commands);
+    } else {
+        // Queue is active - build commands manually to preserve action data
+        this.BuildQuickHackCommandsForQueue(puppetActions, commands);
     }
+}
+
+@addMethod(ScriptedPuppet)
+private func BuildQuickHackCommandsForQueue(
+    puppetActions: array<ref<PuppetAction>>, 
+    out commands: array<ref<QuickhackData>>
+) -> Void {
+    let playerRef: ref<PlayerPuppet> = GetPlayer(this.GetGame());
+    let actionOwnerName: CName = StringToName(this.GetTweakDBFullDisplayName(true));
+    let iceLVL: Float = this.GetICELevel();
+    let playerQHacksList: array<PlayerQuickhackData> = RPGManager.GetPlayerQuickHackListWithQuality(playerRef);
+
+    if ArraySize(playerQHacksList) == 0 {
+        let newCommand: ref<QuickhackData> = new QuickhackData();
+        newCommand.m_title = "LocKey#42171";
+        newCommand.m_isLocked = true;
+        newCommand.m_actionOwnerName = actionOwnerName;
+        newCommand.m_actionState = EActionInactivityReson.Invalid;
+        newCommand.m_description = "LocKey#42172";
+        ArrayPush(commands, newCommand);
+        return;
+    }
+
+    let i: Int32 = 0;
+    while i < ArraySize(playerQHacksList) {
+        let actionRecord: wref<ObjectAction_Record> = playerQHacksList[i].actionRecord;
+        
+        // Replace continue with if-else structure
+        if Equals(actionRecord.ObjectActionType().Type(), gamedataObjectActionType.PuppetQuickHack) {
+            let newCommand: ref<QuickhackData> = new QuickhackData();
+            let actionMatchDeck: Bool = false;
+            let matchedAction: ref<PuppetAction>;
+
+            // Find matching action in puppetActions array
+            let i1: Int32 = 0;
+            while i1 < ArraySize(puppetActions) {
+                if Equals(actionRecord.ActionName(), puppetActions[i1].GetObjectActionRecord().ActionName()) {
+                    actionMatchDeck = true;
+                    
+                    if actionRecord.Priority() >= puppetActions[i1].GetObjectActionRecord().Priority() {
+                        puppetActions[i1].SetObjectActionID(playerQHacksList[i].actionRecord.GetID());
+                        matchedAction = puppetActions[i1];
+                    } else {
+                        actionRecord = puppetActions[i1].GetObjectActionRecord();
+                        matchedAction = puppetActions[i1];
+                    }
+                    
+                    newCommand.m_uploadTime = matchedAction.GetActivationTime();
+                    newCommand.m_duration = matchedAction.GetDurationValue();
+                    break;
+                }
+                i1 += 1;
+            }
+
+            // Rest of the command building logic...
+            newCommand.m_actionOwnerName = actionOwnerName;
+            newCommand.m_actionOwner = this.GetEntityID();
+            newCommand.m_title = LocKeyToString(actionRecord.ObjectActionUI().Caption());
+            newCommand.m_description = LocKeyToString(actionRecord.ObjectActionUI().Description());
+            newCommand.m_icon = actionRecord.ObjectActionUI().CaptionIcon().TexturePartID().GetID();
+            newCommand.m_iconCategory = actionRecord.GameplayCategory().IconName();
+            newCommand.m_type = actionRecord.ObjectActionType().Type();
+            newCommand.m_isInstant = false;
+            newCommand.m_ICELevel = iceLVL;
+            newCommand.m_ICELevelVisible = false;
+            newCommand.m_actionState = EActionInactivityReson.Locked;
+            newCommand.m_quality = playerQHacksList[i].quality;
+            newCommand.m_costRaw = BaseScriptableAction.GetBaseCostStatic(playerRef, actionRecord);
+            newCommand.m_category = actionRecord.HackCategory();
+            newCommand.m_actionMatchesTarget = actionMatchDeck;
+
+            if actionMatchDeck && IsDefined(matchedAction) {
+                newCommand.m_cost = matchedAction.GetCost();
+                
+                if matchedAction.IsInactive() {
+                    newCommand.m_isLocked = true;
+                    newCommand.m_inactiveReason = matchedAction.GetInactiveReason();
+                } else if !matchedAction.IsPossible(this) || !matchedAction.IsVisible(playerRef) {
+                    matchedAction.SetInactiveWithReason(false, "LocKey#7019");
+                    newCommand.m_isLocked = true;
+                    newCommand.m_inactiveReason = "LocKey#7019";
+                } else if !matchedAction.CanPayCost() {
+                    newCommand.m_actionState = EActionInactivityReson.OutOfMemory;
+                    matchedAction.SetInactiveWithReason(false, "LocKey#27398");
+                    newCommand.m_isLocked = true;
+                    newCommand.m_inactiveReason = "LocKey#27398";
+                } else {
+                    newCommand.m_actionState = EActionInactivityReson.Ready;
+                }
+                
+                newCommand.m_action = matchedAction;
+            } else {
+                newCommand.m_isLocked = true;
+                newCommand.m_inactiveReason = "LocKey#10943";
+            }
+
+            ArrayPush(commands, newCommand);
+        }
+        i += 1;
+    }
+
+    // Sync action states and sort
+    let j: Int32 = 0;
+    while j < ArraySize(commands) {
+        if commands[j].m_isLocked && IsDefined(commands[j].m_action) {
+            let puppetAction: ref<PuppetAction> = commands[j].m_action as PuppetAction;
+            if IsDefined(puppetAction) {
+                puppetAction.SetInactiveWithReason(false, commands[j].m_inactiveReason);
+            }
+        }
+        j += 1;
+    }
+
+    QuickhackModule.SortCommandPriority(commands, this.GetGame());
 }
 
 // =============================================================================
