@@ -95,6 +95,12 @@ private func TranslateChoicesIntoQuickSlotCommands(
                 // cmd.m_cost is the final calculated cost after all modifiers
                 let playerMemory: Float = GameInstance.GetStatPoolsSystem(this.GetGame())
                     .GetStatPoolValue(Cast<StatsObjectID>(GetPlayer(this.GetGame()).GetEntityID()), gamedataStatPoolType.Memory, false);
+
+                if IsDefined(cmd.m_category) && Equals(cmd.m_category.EnumName(), n"NotAHack") {
+                    cmd.m_isLocked = true;
+                    cmd.m_inactiveReason = GetBlockedKey();
+                    cmd.m_actionState = EActionInactivityReson.Locked;
+                }
                 
                 if Cast<Float>(cmd.m_cost) > playerMemory {
                     // Re-lock due to insufficient RAM
@@ -128,7 +134,6 @@ private func TranslateChoicesIntoQuickSlotCommands(
             j += 1;
         }
         
-        QueueModLog(n"DEBUG", n"EVENTS", "Upload bypass with RAM validation complete");
     }
 }
 
