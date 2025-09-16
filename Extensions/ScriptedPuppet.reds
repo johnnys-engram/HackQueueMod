@@ -26,6 +26,9 @@ public func GetBlockedKey() -> String { return "LocKey#40765"; }
 @addField(ScriptedPuppet)
 private let m_queueModActionQueue: ref<QueueModActionQueue>;
 
+@addField(ScriptedPuppet)
+private let m_queuedActionIDs: array<TweakDBID>;
+
 @addMethod(ScriptedPuppet)
 public func GetQueueModActionQueue() -> ref<QueueModActionQueue> {
     if !IsDefined(this.m_queueModActionQueue) {
@@ -58,6 +61,30 @@ public func IsQueueModFull() -> Bool {
         this.m_lastQueueSizeLogged = queueSize;
     }
     return isFull;
+}
+
+// Cache maintenance methods
+@addMethod(ScriptedPuppet)
+public func QueueMod_AddToCache(actionID: TweakDBID) -> Void {
+    if TDBID.IsValid(actionID) && !ArrayContains(this.m_queuedActionIDs, actionID) {
+        ArrayPush(this.m_queuedActionIDs, actionID);
+        QueueModLog(n"DEBUG", n"QUEUE", s"Added to cache: \(TDBID.ToStringDEBUG(actionID)), cache size: \(ArraySize(this.m_queuedActionIDs))");
+    }
+}
+
+@addMethod(ScriptedPuppet)
+public func QueueMod_RemoveFromCache(actionID: TweakDBID) -> Void {
+    if TDBID.IsValid(actionID) {
+        ArrayRemove(this.m_queuedActionIDs, actionID);
+        QueueModLog(n"DEBUG", n"QUEUE", s"Removed from cache: \(TDBID.ToStringDEBUG(actionID)), cache size: \(ArraySize(this.m_queuedActionIDs))");
+    }
+}
+
+@addMethod(ScriptedPuppet)
+public func QueueMod_ClearCache() -> Void {
+    let oldSize: Int32 = ArraySize(this.m_queuedActionIDs);
+    ArrayClear(this.m_queuedActionIDs);
+    QueueModLog(n"DEBUG", n"QUEUE", s"Cache cleared: \(oldSize) -> 0");
 }
 
 // =============================================================================
@@ -93,6 +120,8 @@ private func BuildQuickHackCommandsForQueue(
     let actionOwnerName: CName = StringToName(this.GetTweakDBFullDisplayName(true));
     let iceLVL: Float = this.GetICELevel();
     let playerQHacksList: array<PlayerQuickhackData> = RPGManager.GetPlayerQuickHackListWithQuality(playerRef);
+
+    QueueModLog(n"DEBUG", n"QUEUE", s"Building queue commands, cache size: \(ArraySize(this.m_queuedActionIDs))");
 
     if ArraySize(playerQHacksList) == 0 {
         let newCommand: ref<QuickhackData> = new QuickhackData();

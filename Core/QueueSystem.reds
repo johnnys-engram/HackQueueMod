@@ -174,7 +174,18 @@ public class QueueModActionQueue {
             return false;
         }
         
+        // Add to queue
         ArrayPush(this.m_queueEntries, entry);
+        
+        // MAINTAIN CACHE - Add to puppet's cache
+        if IsDefined(pa) {
+            let targetID: EntityID = pa.GetRequesterID();
+            let target: ref<ScriptedPuppet> = GameInstance.FindEntityByID(GetGameInstance(), targetID) as ScriptedPuppet;
+            if IsDefined(target) {
+                target.QueueMod_AddToCache(actionID);
+            }
+        }
+        
         QueueModLog(n"DEBUG", n"QUEUE", s"Entry added: \(key), actionID=\(TDBID.ToStringDEBUG(actionID)), size=\(ArraySize(this.m_queueEntries))");
         return true;
     }
@@ -192,6 +203,20 @@ public class QueueModActionQueue {
         }
         
         ArrayErase(this.m_queueEntries, 0);
+        
+        // MAINTAIN CACHE - Remove from puppet's cache
+        if IsDefined(entry.action) {
+            let pa: ref<PuppetAction> = entry.action as PuppetAction;
+            if IsDefined(pa) {
+                let actionID: TweakDBID = pa.GetObjectActionID();
+                let targetID: EntityID = pa.GetRequesterID();
+                let target: ref<ScriptedPuppet> = GameInstance.FindEntityByID(GetGameInstance(), targetID) as ScriptedPuppet;
+                if IsDefined(target) && TDBID.IsValid(actionID) {
+                    target.QueueMod_RemoveFromCache(actionID);
+                }
+            }
+        }
+        
         QueueModLog(n"DEBUG", n"QUEUE", s"Entry popped: type=\(entry.entryType) fingerprint=\(entry.fingerprint)");
         return entry;
     }
@@ -202,11 +227,30 @@ public class QueueModActionQueue {
 
     public func ClearQueue() -> Void {
         let queueSize: Int32 = ArraySize(this.m_queueEntries);
+        
+        // MAINTAIN CACHE - Clear puppet's cache if we have entries
+        if ArraySize(this.m_queueEntries) > 0 && IsDefined(this.m_queueEntries[0]) && IsDefined(this.m_queueEntries[0].action) {
+            let pa: ref<PuppetAction> = this.m_queueEntries[0].action as PuppetAction;
+            if IsDefined(pa) {
+                let targetID: EntityID = pa.GetRequesterID();
+                let target: ref<ScriptedPuppet> = GameInstance.FindEntityByID(GetGameInstance(), targetID) as ScriptedPuppet;
+                if IsDefined(target) {
+                    target.QueueMod_ClearCache();
+                }
+            }
+        }
+        
         ArrayClear(this.m_queueEntries);
         QueueModLog(n"DEBUG", n"QUEUE", s"Queue cleared - \(queueSize) entries removed");
     }
 
     public func ClearQueue(gameInstance: GameInstance, targetID: EntityID) -> Void {
+        // MAINTAIN CACHE - Clear specific puppet's cache  
+        let target: ref<ScriptedPuppet> = GameInstance.FindEntityByID(gameInstance, targetID) as ScriptedPuppet;
+        if IsDefined(target) {
+            target.QueueMod_ClearCache();
+        }
+        
         this.ClearQueue();
     }
 
