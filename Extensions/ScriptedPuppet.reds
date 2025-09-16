@@ -10,14 +10,31 @@ import JE_HackQueueMod.Logging.*
 import JE_HackQueueMod.Core.*
 
 // =============================================================================
-// CONSTANTS
+// CONSTANTS - All LocKeys centralized for maintainability
 // =============================================================================
 
-// LocKey constants for better maintainability
+// Upload/Progress related
 public func GetUploadInProgressKey() -> String { return "LocKey#7020"; }
-public func GetOutOfMemoryKey() -> String { return "LocKey#27398"; }
 public func GetInvalidActionKey() -> String { return "LocKey#7019"; }
+
+// Resource/Cost related  
+public func GetOutOfMemoryKey() -> String { return "LocKey#27398"; }
+
+// Blocking/Restriction related
 public func GetBlockedKey() -> String { return "LocKey#40765"; }
+public func GetCooldownActiveKey() -> String { return "LocKey#27399"; }
+public func GetNoDeckMatchKey() -> String { return "LocKey#10943"; }
+public func GetTargetNotHackableKey() -> String { return "LocKey#27694"; }
+
+// No Quickhacks Available messages
+public func GetNoQuickhacksTitleKey() -> String { return "LocKey#42171"; }
+public func GetNoQuickhacksDescKey() -> String { return "LocKey#42172"; }
+
+// State enum mappings for better readability
+public func GetLockedState() -> EActionInactivityReson { return EActionInactivityReson.Locked; }
+public func GetReadyState() -> EActionInactivityReson { return EActionInactivityReson.Ready; }
+public func GetInvalidState() -> EActionInactivityReson { return EActionInactivityReson.Invalid; }
+public func GetOutOfMemoryState() -> EActionInactivityReson { return EActionInactivityReson.OutOfMemory; }
 
 // =============================================================================
 // SCRIPTED PUPPET EXTENSIONS
@@ -125,13 +142,14 @@ private func BuildQuickHackCommandsForQueue(
 
     //QueueModLog(n"DEBUG", n"QUEUE", s"Building queue commands, cache size: \(ArraySize(this.m_queuedActionIDs))");
 
+    // No quickhacks available case
     if ArraySize(playerQHacksList) == 0 {
         let newCommand: ref<QuickhackData> = new QuickhackData();
-        newCommand.m_title = "LocKey#42171";
+        newCommand.m_title = GetNoQuickhacksTitleKey();
         newCommand.m_isLocked = true;
         newCommand.m_actionOwnerName = actionOwnerName;
-        newCommand.m_actionState = EActionInactivityReson.Invalid;
-        newCommand.m_description = "LocKey#42172";
+        newCommand.m_actionState = GetInvalidState();
+        newCommand.m_description = GetNoQuickhacksDescKey();
         ArrayPush(commands, newCommand);
         return;
     }
@@ -198,46 +216,56 @@ private func BuildQuickHackCommandsForQueue(
             newCommand.m_costRaw = BaseScriptableAction.GetBaseCostStatic(playerRef, actionRecord);
             newCommand.m_category = actionRecord.HackCategory();
             newCommand.m_actionMatchesTarget = actionMatchDeck;
-            // Check for NotAHack category first
+            // PRIORITY 1: Category-Level Blocking (Highest Priority)
             if IsDefined(newCommand.m_category) && Equals(newCommand.m_category.EnumName(), n"NotAHack") {
                 newCommand.m_isLocked = true;
                 newCommand.m_inactiveReason = GetBlockedKey();
-                newCommand.m_actionState = EActionInactivityReson.Locked;
+                newCommand.m_actionState = GetLockedState();
             } else {
+                // PRIORITY 2: No Deck Match (Second Highest)
                 if actionMatchDeck && IsDefined(matchedAction) {
                     newCommand.m_cost = matchedAction.GetCost();
+                    
+                    // PRIORITY 3: Queue Duplicates (Third Priority)
                     if ArrayContains(this.m_queuedActionIDs, matchedAction.GetObjectActionID()) {
                         newCommand.m_isLocked = true;
                         newCommand.m_inactiveReason = GetBlockedKey();
-                        newCommand.m_actionState = EActionInactivityReson.Locked;
+                        newCommand.m_actionState = GetLockedState();
                         newCommand.m_action = matchedAction;
-                    } else if newCommand.m_cooldown > 0.00 && StatusEffectSystem.ObjectHasStatusEffect(playerRef, newCommand.m_cooldownTweak) {
-                            newCommand.m_isLocked = true;
-                            newCommand.m_inactiveReason = "LocKey#27399"; // Or appropriate cooldown message
-                            newCommand.m_actionState = EActionInactivityReson.Locked;
-                            newCommand.m_action = matchedAction;
-                        } else {
-                        // Vanilla structure: Check IsInactive first
+                    } 
+                    // PRIORITY 4: Active Cooldowns (Fourth Priority)
+                    else if newCommand.m_cooldown > 0.00 && StatusEffectSystem.ObjectHasStatusEffect(playerRef, newCommand.m_cooldownTweak) {
+                        newCommand.m_isLocked = true;
+                        newCommand.m_inactiveReason = GetCooldownActiveKey();
+                        newCommand.m_actionState = GetLockedState();
+                        newCommand.m_action = matchedAction;
+                    } 
+                    else {
+                        // PRIORITY 5: Game State Blocking (Fifth Priority)
                         if matchedAction.IsInactive() {
                             newCommand.m_isLocked = true;
-                            newCommand.m_inactiveReason = matchedAction.GetInactiveReason();
-                            newCommand.m_actionState = EActionInactivityReson.Locked; //stays as Locked (default from above)
+                            newCommand.m_inactiveReason = matchedAction.GetInactiveReason(); // Dynamic from game
+                            newCommand.m_actionState = GetLockedState();
                             newCommand.m_action = matchedAction;
                         } else {
-                            // Action is active - check RAM cost
+                            // PRIORITY 6: RAM Cost Blocking (Sixth Priority)
                             if !matchedAction.CanPayCost() {
-                                newCommand.m_actionState = EActionInactivityReson.OutOfMemory;
+                                newCommand.m_actionState = GetOutOfMemoryState();
                                 newCommand.m_isLocked = true;
-                                newCommand.m_inactiveReason = "LocKey#27398";
+                                newCommand.m_inactiveReason = GetOutOfMemoryKey();
+                                newCommand.m_action = matchedAction;
+                            } else {
+                                // PRIORITY 7: Ready State (Success Case)
+                                newCommand.m_actionState = GetReadyState();
                                 newCommand.m_action = matchedAction;
                             }
                         }
                     }
                 } else {
-                    // No matching action on cyberdeck
+                    // PRIORITY 2: No matching action on cyberdeck
                     newCommand.m_isLocked = true;
-                    newCommand.m_inactiveReason = "LocKey#10943";
-                    newCommand.m_actionState = EActionInactivityReson.Invalid;
+                    newCommand.m_inactiveReason = GetNoDeckMatchKey();
+                    newCommand.m_actionState = GetInvalidState();
                 }
             }
 
