@@ -91,15 +91,13 @@ private func TranslateChoicesIntoQuickSlotCommands(
 ) -> Void {
     let isOngoingUpload: Bool = GameInstance.GetStatPoolsSystem(this.GetGame())
         .IsStatPoolAdded(Cast<StatsObjectID>(this.GetEntityID()), gamedataStatPoolType.QuickHackUpload);
-    let hasQueued: Bool = IsDefined(this.GetQueueModActionQueue()) 
-        && this.GetQueueModActionQueue().GetQueueSize() > 0;
     
-    if !(isOngoingUpload || hasQueued) || !this.IsQueueModEnabled() || this.IsQueueModFull() {
+    if !isOngoingUpload || !this.IsQueueModEnabled() || this.IsQueueModFull() {
         wrappedMethod(puppetActions, commands);
     } else {
-        this.BuildQuickHackCommandsForQueue(puppetActions, commands);
-        QuickhackModule.RequestRefreshQuickhackMenu(this.GetGame(), this.GetEntityID());    
+        this.BuildQuickHackCommandsForQueue(puppetActions, commands);  
     }
+        QuickhackModule.RequestRefreshQuickhackMenu(this.GetGame(), this.GetEntityID());   
 }
 
 @addMethod(ScriptedPuppet)
