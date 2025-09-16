@@ -75,6 +75,11 @@ public func QueueMod_ClearCache() -> Void {
     ArrayClear(this.m_queuedActionIDs);
 }
 
+@addMethod(ScriptedPuppet)
+public func QueueMod_SetActiveVanillaUpload(actionID: TweakDBID) -> Void {
+    this.m_activeVanillaUploadID = actionID;
+}
+
 // =============================================================================
 // NPC Upload Detection & Queue Processing
 // =============================================================================
