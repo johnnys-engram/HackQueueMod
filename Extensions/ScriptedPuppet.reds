@@ -92,7 +92,7 @@ private func TranslateChoicesIntoQuickSlotCommands(
                 cmd.m_actionState = EActionInactivityReson.Ready;
                 
                 // Re-validate with other checks
-                this.RevalidateCommandExcludingUpload(cmd, puppetActions);
+                //this.RevalidateCommandExcludingUpload(cmd, puppetActions);
             }
             i += 1;
         }
@@ -112,68 +112,6 @@ private func TranslateChoicesIntoQuickSlotCommands(
         }
         
         QueueModLog(n"DEBUG", n"EVENTS", "Upload bypass with re-validation complete");
-    }
-}
-
-@addMethod(ScriptedPuppet)
-private func RevalidateCommandExcludingUpload(
-    cmd: ref<QuickhackData>, 
-    puppetActions: array<ref<PuppetAction>>
-) -> Void {
-    if !IsDefined(cmd) || !IsDefined(cmd.m_action) {
-        return;
-    }
-    
-    let action: ref<PuppetAction> = cmd.m_action as PuppetAction;
-    if !IsDefined(action) {
-        return;
-    }
-    
-    // Re-run vanilla validation checks (excluding upload)
-    
-    // Cost check
-    if !action.CanPayCost() {
-        cmd.m_isLocked = true;
-        cmd.m_actionState = EActionInactivityReson.OutOfMemory;
-        cmd.m_inactiveReason = GetOutOfMemoryKey();
-        return;
-    }
-    
-    // Possibility/visibility check  
-    let player: ref<PlayerPuppet> = GetPlayer(this.GetGame());
-    if !IsDefined(player) || !action.IsPossible(this) || !action.IsVisible(player) {
-        cmd.m_isLocked = true;
-        cmd.m_actionState = EActionInactivityReson.Invalid;
-        cmd.m_inactiveReason = GetInvalidActionKey();
-        return;
-    }
-    
-    // Check if action became inactive
-    if action.IsInactive() {
-        cmd.m_isLocked = true;
-        cmd.m_inactiveReason = action.GetInactiveReason();
-        return;
-    }
-    
-    // Target active prereqs (simplified)
-    let actionRecord: ref<ObjectAction_Record> = action.GetObjectActionRecord();
-    if IsDefined(actionRecord) && actionRecord.GetTargetActivePrereqsCount() > 0 {
-        let targetActivePrereqs: array<wref<ObjectActionPrereq_Record>>;
-        actionRecord.TargetActivePrereqs(targetActivePrereqs);
-        
-        let i: Int32 = 0;
-        while i < ArraySize(targetActivePrereqs) {
-            if IsDefined(targetActivePrereqs[i]) {
-                let prereqsToCheck: array<wref<IPrereq_Record>>;
-                targetActivePrereqs[i].FailureConditionPrereq(prereqsToCheck);
-                if !RPGManager.CheckPrereqs(prereqsToCheck, this) {
-                    cmd.m_isLocked = true;
-                    cmd.m_inactiveReason = targetActivePrereqs[i].FailureExplanation();
-                    return;
-                }
-            }
-            i += 1;
-        }
     }
 }
 
