@@ -1,5 +1,5 @@
 // =============================================================================
-// HackQueueMod - UI Controllers
+// HackQueueMod - UI Controllers (PRUNED)
 // Creator: johnnys-engram
 // Target: Cyberpunk 2077 v1.63
 // Framework: redscript 0.5.14
@@ -8,17 +8,6 @@
 module JE_HackQueueMod.UI
 import JE_HackQueueMod.Logging.*
 import JE_HackQueueMod.Core.*
-
-// =============================================================================
-// CONSTANTS
-// =============================================================================
-
-// UI LocKey constants for better maintainability
-public func GetUploadProgressKey() -> String { return "LocKey#43809"; }
-public func GetUploadInProgressKey() -> String { return "LocKey#7020"; }
-public func GetOutOfMemoryKey() -> String { return "LocKey#27398"; }
-public func GetBlockedKey() -> String { return "LocKey#40765"; }
-public func GetInvalidActionKey() -> String { return "LocKey#7019"; }
 
 // =============================================================================
 // ENHANCED COST OVERRIDE SYSTEM FOR QUEUED ACTIONS
@@ -178,7 +167,6 @@ private func QueueMod_HandleQueuedExecution() -> Bool {
         // Deduct RAM and apply effects
         this.QueueMod_DeductRAM(player, liveCost);
         this.ApplyQueueModCooldownWithData(this.m_selectedData);
-        this.QM_FireQueueEvent(n"ItemAdded", this.m_selectedData);
         
         QueueModLog(n"DEBUG", n"QUEUE", s"Successfully queued: \(actionName) for target: \(ToString(targetID))");
         return true;
@@ -271,25 +259,10 @@ private func ApplyQueueModCooldownWithData(data: ref<QuickhackData>) -> Void {
             if (Equals(this.m_data[i].m_title, data.m_title)) {
                 // Update data
                 this.m_data[i].m_isLocked = true;
-                this.m_data[i].m_inactiveReason = GetBlockedKey();
+                this.m_data[i].m_inactiveReason = "LocKey#40765";
                 break;
             }
             i += 1;
         }
     }
-}
-
-@addMethod(QuickhacksListGameController)
-private func QM_FireQueueEvent(eventType: CName, data: ref<QuickhackData>) -> Void {
-    // Fire QueueEvent for state synchronization
-    QueueModLog(n"DEBUG", n"EVENTS", s"Fired \(ToString(eventType)) for \(GetLocalizedText(data.m_title))");
-    
-    // Create and fire queue event for UI synchronization
-    let queueEvent: ref<QueueModEvent> = new QueueModEvent();
-    queueEvent.eventType = eventType;
-    queueEvent.quickhackData = data;
-    queueEvent.timestamp = GameInstance.GetTimeSystem(this.m_gameInstance).GetGameTimeStamp();
-    
-    // Fire the event to notify QueueStateSynchronizer
-    GameInstance.GetUISystem(this.m_gameInstance).QueueEvent(queueEvent);
 }

@@ -1,5 +1,5 @@
 // =============================================================================
-// HackQueueMod - Logging Module
+// HackQueueMod - Logging Module (PRUNED)
 // Creator: johnnys-engram
 // Target: Cyberpunk 2077 v1.63
 // Framework: redscript 0.5.14
@@ -39,17 +39,4 @@ public func QueueModLog(level: CName, category: CName, message: String) -> Void 
     // Format: [CATEGORY] message
     let formattedMessage: String = s"[\(ToString(category))] \(message)";
     LogChannel(level, formattedMessage);
-}
-
-// Version constants for mod management
-public func GetHackQueueModVersion() -> String {
-    return "1.0.0";
-}
-
-public func GetHackQueueModCreator() -> String {
-    return "johnnys-engram";
-}
-
-public func GetHackQueueModTargetVersion() -> String {
-    return "Cyberpunk 2077 v1.63";
 }

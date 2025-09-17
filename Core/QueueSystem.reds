@@ -1,5 +1,5 @@
 // =============================================================================
-// HackQueueMod - Core Queue System (Consolidated)
+// HackQueueMod - Core Queue System (PRUNED)
 // Creator: johnnys-engram
 // Target: Cyberpunk 2077 v1.63
 // Framework: redscript 0.5.14
@@ -15,17 +15,6 @@ import JE_HackQueueMod.Logging.*
 // Queue configuration
 public func GetDefaultQueueSize() -> Int32 { return 3; }
 public func GetActionEntryType() -> Int32 { return 0; }
-public func GetMaxDuplicateCheckIterations() -> Int32 { return 50; }
-
-// =============================================================================
-// EVENT CLASSES FOR QUEUE MANAGEMENT
-// =============================================================================
-
-public class QueueModEvent extends Event {
-    public let eventType: CName;
-    public let quickhackData: ref<QuickhackData>;
-    public let timestamp: Float;
-}
 
 // =============================================================================
 // CORE QUEUE DATA STRUCTURES
@@ -54,7 +43,6 @@ public func CreateQueueModEntry(action: ref<DeviceAction>, key: String, cost: In
 // =============================================================================
 
 public class QueueModHelper {
-
     public func PutInQuickHackQueueWithKey(action: ref<DeviceAction>, key: String) -> Bool {
         QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod] Queue system activated with key=\(key)");
         if !IsDefined(action) {
@@ -127,10 +115,9 @@ public class QueueModActionQueue {
             return false;
         }
         
-        // Check for duplicates with bounded iteration
+        // Check for duplicates - simplified loop
         let i: Int32 = 0;
-        let maxIterations: Int32 = GetMaxDuplicateCheckIterations();
-        while i < ArraySize(this.m_queueEntries) && i < maxIterations {
+        while i < ArraySize(this.m_queueEntries) {
             if IsDefined(this.m_queueEntries[i]) && Equals(this.m_queueEntries[i].fingerprint, key) {
                 QueueModLog(n"DEBUG", n"QUEUE", s"Duplicate key rejected: \(key)");
                 return false;
@@ -217,7 +204,7 @@ public class QueueModActionQueue {
             }
         }
         
-        QueueModLog(n"DEBUG", n"QUEUE", s"Entry popped: type=\(entry.entryType) fingerprint=\(entry.fingerprint)");
+        QueueModLog(n"DEBUG", n"QUEUE", s"Entry popped: fingerprint=\(entry.fingerprint)");
         return entry;
     }
 
@@ -260,55 +247,5 @@ public class QueueModActionQueue {
 
     public func UnlockQueue() -> Void {
         this.m_isQueueLocked = false;
-    }
-
-    public func ValidateQueueIntegrity() -> Bool {
-        let isValid: Bool = true;
-        let i: Int32 = 0;
-        let cleanupNeeded: Bool = false;
-        
-        while i < ArraySize(this.m_queueEntries) {
-            let entry: ref<QueueModEntry> = this.m_queueEntries[i];
-            if !IsDefined(entry) {
-                QueueModLog(n"ERROR", n"QUEUE", s"Null entry at index \(i)");
-                cleanupNeeded = true;
-                isValid = false;
-            } else if Equals(entry.entryType, GetActionEntryType()) && !IsDefined(entry.action) {
-                QueueModLog(n"ERROR", n"QUEUE", s"Invalid action at index \(i): \(entry.fingerprint)");
-                cleanupNeeded = true;
-                isValid = false;
-            }
-            i += 1;
-        }
-        
-        if cleanupNeeded {
-            QueueModLog(n"ERROR", n"QUEUE", "Queue corruption detected - executing emergency cleanup");
-            this.EmergencyCleanup();
-        }
-        
-        return isValid;
-    }
-
-    private func EmergencyCleanup() -> Void {
-        let cleanEntries: array<ref<QueueModEntry>>;
-        let i: Int32 = 0;
-        
-        while i < ArraySize(this.m_queueEntries) {
-            let entry: ref<QueueModEntry> = this.m_queueEntries[i];
-            if IsDefined(entry) {
-                if Equals(entry.entryType, GetActionEntryType()) && IsDefined(entry.action) {
-                    let sa: ref<ScriptableDeviceAction> = entry.action as ScriptableDeviceAction;
-                    if IsDefined(sa) && TDBID.IsValid(sa.GetObjectActionID()) {
-                        ArrayPush(cleanEntries, entry);
-                    }
-                }
-            }
-            i += 1;
-        }
-        
-        ArrayClear(this.m_queueEntries);
-        this.m_queueEntries = cleanEntries;
-        
-        QueueModLog(n"DEBUG", n"QUEUE", s"[QueueMod] Emergency cleanup complete - \(ArraySize(this.m_queueEntries)) entries recovered");
     }
 }
