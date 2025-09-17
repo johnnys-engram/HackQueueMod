@@ -146,17 +146,29 @@ private func QueueMod_CanAffordCost(player: ref<PlayerPuppet>, cost: Int32) -> B
 
 @addMethod(QuickhacksListGameController)
 private func QueueMod_DeductRAM(player: ref<PlayerPuppet>, cost: Int32) -> Void {
+    let sps: ref<StatPoolsSystem> = GameInstance.GetStatPoolsSystem(this.m_gameInstance);
+    let oid: StatsObjectID = Cast<StatsObjectID>(player.GetEntityID());
+    let beforeRAM: Float = sps.GetStatPoolValue(oid, gamedataStatPoolType.Memory, false);
+    
+    QueueModLog(n"DEBUG", n"RAM", s"=== RAM DEDUCTION DEBUG ===");
+    QueueModLog(n"DEBUG", n"RAM", s"Input cost: \(cost)");
+    QueueModLog(n"DEBUG", n"RAM", s"RAM before: \(beforeRAM)");
+    
     if (cost <= 0) {
-        QueueModLog(n"DEBUG", n"RAM", "No RAM to deduct - cost is 0");
+        QueueModLog(n"ERROR", n"RAM", s"INVALID COST: \(cost) - this would ADD RAM instead of subtract!");
         return;
     }
     
-    let sps: ref<StatPoolsSystem> = GameInstance.GetStatPoolsSystem(this.m_gameInstance);
-    let oid: StatsObjectID = Cast<StatsObjectID>(player.GetEntityID());
     let ramToDeduct: Float = -Cast<Float>(cost);
+    QueueModLog(n"DEBUG", n"RAM", s"Calculated ramToDeduct: \(ramToDeduct)");
     
-    QueueModLog(n"DEBUG", n"RAM", s"Deducting \(cost) RAM");
     sps.RequestChangingStatPoolValue(oid, gamedataStatPoolType.Memory, ramToDeduct, player, true, false);
+    
+    let afterRAM: Float = sps.GetStatPoolValue(oid, gamedataStatPoolType.Memory, false);
+    let actualChange: Float = afterRAM - beforeRAM;
+    QueueModLog(n"DEBUG", n"RAM", s"RAM after: \(afterRAM)");
+    QueueModLog(n"DEBUG", n"RAM", s"Actual change: \(actualChange)");
+    QueueModLog(n"DEBUG", n"RAM", s"=== END RAM DEBUG ===");
 }
 
 @addMethod(QuickhacksListGameController)
