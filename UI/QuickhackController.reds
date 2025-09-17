@@ -106,10 +106,10 @@ private func QueueModIsOnCooldown(data: ref<QuickhackData>) -> Bool {
 private func ApplyQuickHack() -> Bool {
     QueueModLog(n"DEBUG", n"QUICKHACK", "ApplyQuickHack called");
 
-    // Basic validation
-    if (!IsDefined(this.m_selectedData) || !IsDefined(this.m_selectedData.m_action)) {
-        QueueModLog(n"DEBUG", n"QUICKHACK", "No selectedData/action - executing vanilla");
-        return wrappedMethod();
+    // Basic validation - respect vanilla locked state
+    if (!IsDefined(this.m_selectedData) || this.m_selectedData.m_isLocked) {
+        QueueModLog(n"DEBUG", n"QUICKHACK", "Action locked or invalid - skipping");
+        return false;
     }
 
     // Check if we should queue
@@ -150,12 +150,6 @@ private func QueueMod_HandleQueuedExecution() -> Bool {
     
     QueueModLog(n"DEBUG", n"QUICKHACK", s"Queuing: \(actionName)");
 
-    // Check cooldown
-    if (this.QueueModIsOnCooldown(this.m_selectedData)) {
-        QueueModLog(n"DEBUG", n"QUICKHACK", s"On cooldown: \(actionName)");
-        return false;
-    }
-
     // Get live cost from action (includes all game reductions)
     let scriptableAction: ref<BaseScriptableAction> = actionToQueue as BaseScriptableAction;
     let liveCost: Int32;
@@ -169,10 +163,6 @@ private func QueueMod_HandleQueuedExecution() -> Bool {
 
     // Check if we can afford it
     let player: ref<PlayerPuppet> = GameInstance.GetPlayerSystem(this.m_gameInstance).GetLocalPlayerMainGameObject() as PlayerPuppet;
-    if (!this.QueueMod_CanAffordCost(player, liveCost)) {
-        QueueModLog(n"ERROR", n"RAM", s"Cannot afford \(actionName): cost=\(liveCost)");
-        return false;
-    }
 
     // Set target-specific cost override BEFORE any operations
     if (IsDefined(scriptableAction)) {
