@@ -71,23 +71,6 @@ public func ProcessRPGAction(gameInstance: GameInstance) -> Void {
 }
 
 // =============================================================================
-// Cooldown Detection and Management
-// =============================================================================
-
-@addMethod(QuickhacksListGameController)
-private func QueueModIsOnCooldown(data: ref<QuickhackData>) -> Bool {
-    if (!IsDefined(data) || data.m_cooldown <= 0.0 || !TDBID.IsValid(data.m_cooldownTweak)) {
-        return false;
-    }
-    let playerSystem: ref<PlayerSystem> = GameInstance.GetPlayerSystem(this.m_gameInstance);
-    let player: ref<PlayerPuppet> = playerSystem.GetLocalPlayerMainGameObject() as PlayerPuppet;
-    if (!IsDefined(player)) {
-        return false;
-    }
-    return StatusEffectSystem.ObjectHasStatusEffect(player, data.m_cooldownTweak);
-}
-
-// =============================================================================
 // Core ApplyQuickHack Integration - REFACTORED
 // =============================================================================
 
@@ -178,18 +161,6 @@ private func QueueMod_HandleQueuedExecution() -> Bool {
         QueueModLog(n"ERROR", n"QUEUE", s"Failed to queue: \(actionName)");
         return false;
     }
-}
-
-@addMethod(QuickhacksListGameController)
-private func QueueMod_CanAffordCost(player: ref<PlayerPuppet>, cost: Int32) -> Bool {
-    if (cost <= 0) {
-        return true;
-    }
-    
-    let sps: ref<StatPoolsSystem> = GameInstance.GetStatPoolsSystem(this.m_gameInstance);
-    let availableRAM: Float = sps.GetStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Memory, false);
-    
-    return Cast<Float>(cost) <= availableRAM;
 }
 
 @addMethod(QuickhacksListGameController)
