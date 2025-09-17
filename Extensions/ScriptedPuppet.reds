@@ -271,15 +271,11 @@ protected cb func OnUploadProgressStateChanged(evt: ref<UploadProgramProgressEve
     if Equals(evt.progressBarContext, EProgressBarContext.QuickHack) && 
        Equals(evt.progressBarType, EProgressBarType.UPLOAD) {
         
-        // Death check first - clear queue immediately for any upload state
-        if this.IsDead() || 
-           StatusEffectSystem.ObjectHasStatusEffectWithTag(this, n"Dead") ||
-           StatusEffectSystem.ObjectHasStatusEffectWithTag(this, n"Unconscious") {
-            
+        if !ScriptedPuppet.IsActive(this) {
             let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
             if IsDefined(queue) && queue.GetQueueSize() > 0 {
                 queue.ClearQueue(this.GetGame(), this.GetEntityID());
-                QueueModLog(n"DEBUG", n"QUICKHACK", "Target dead - queue cleared");
+                QueueModLog(n"DEBUG", n"QUICKHACK", "Target inactive - queue cleared");
             }
             return result;
         }
@@ -318,11 +314,11 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
         return;
     }
 
-    if !IsDefined(this) || this.IsDead() || StatusEffectSystem.ObjectHasStatusEffectWithTag(this, n"Dead") || StatusEffectSystem.ObjectHasStatusEffectWithTag(this, n"Unconscious") {
-        QueueModLog(n"DEBUG", n"QUICKHACK", "Target invalid/dead/unconscious - clearing queue");
+    if !ScriptedPuppet.IsActive(this) {
         let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
-        if IsDefined(queue) {
+        if IsDefined(queue) && queue.GetQueueSize() > 0 {
             queue.ClearQueue(this.GetGame(), this.GetEntityID());
+            QueueModLog(n"DEBUG", n"QUICKHACK", "Target inactive - queue cleared");
         }
         return;
     }
@@ -353,19 +349,8 @@ private func ExecuteQueuedEntry(entry: ref<QueueModEntry>) -> Void {
         if IsDefined(paExec) {
             paExec.RegisterAsRequester(this.GetEntityID());
             paExec.SetExecutor(player);
-            
-            this.GetQueueModActionQueue().LockQueue();
-            
             QueueModLog(n"DEBUG", n"QUICKHACK", s"Processing PuppetAction RPG for target: \(GetLocalizedText(this.GetDisplayName()))");
             paExec.ProcessRPGAction(this.GetGame());
-
-            if this.IsDead() || StatusEffectSystem.ObjectHasStatusEffectWithTag(this, n"Dead") || 
-               StatusEffectSystem.ObjectHasStatusEffectWithTag(this, n"Unconscious") {
-                QueueModLog(n"DEBUG", n"QUICKHACK", "Target died during execution - clearing queue");
-                this.GetQueueModActionQueue().ClearQueue(this.GetGame(), this.GetEntityID());
-                return;
-            }
-            this.GetQueueModActionQueue().UnlockQueue();
             
         } else {
             QueueModLog(n"DEBUG", n"QUICKHACK", s"Unknown action type: \(entry.action.GetClassName())");
@@ -382,16 +367,17 @@ protected cb func OnStatusEffectApplied(evt: ref<ApplyStatusEffectEvent>) -> Boo
     let result: Bool = wrappedMethod(evt);
     
     if IsDefined(evt.staticData) {
-        let effectID: TweakDBID = evt.staticData.GetID();
-        let effectIDStr: String = TDBID.ToStringDEBUG(effectID);
+        let effectType: gamedataStatusEffectType = evt.staticData.StatusEffectType().Type();
         
-        if StrContains(effectIDStr, "Dead") || StrContains(effectIDStr, "Unconscious") ||
-           StrContains(effectIDStr, "BaseStatusEffect.Dead") || StrContains(effectIDStr, "BaseStatusEffect.Unconscious") {
+        // Check for death, unconscious, or defeated status effects using proper types
+        if Equals(effectType, gamedataStatusEffectType.Unconscious) ||
+           Equals(effectType, gamedataStatusEffectType.Defeated) ||
+           Equals(effectType, gamedataStatusEffectType.DefeatedWithRecover) {
             
             let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
             if IsDefined(queue) && queue.GetQueueSize() > 0 {
                 queue.ClearQueue(this.GetGame(), this.GetEntityID());
-                QueueModLog(n"DEBUG", n"EVENTS", s"Queue cleared on death/unconscious status: \(effectIDStr)");
+                QueueModLog(n"DEBUG", n"EVENTS", s"Queue cleared on status effect: \(ToString(effectType))");
             }
         }
     }

@@ -240,12 +240,4 @@ public class QueueModActionQueue {
         
         this.ClearQueue();
     }
-
-    public func LockQueue() -> Void {
-        this.m_isQueueLocked = true;
-    }
-
-    public func UnlockQueue() -> Void {
-        this.m_isQueueLocked = false;
-    }
 }
