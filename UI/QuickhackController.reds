@@ -21,6 +21,67 @@ public func GetBlockedKey() -> String { return "LocKey#40765"; }
 public func GetInvalidActionKey() -> String { return "LocKey#7019"; }
 
 // =============================================================================
+// ENHANCED COST OVERRIDE SYSTEM FOR QUEUED ACTIONS
+// Target-specific cost override to prevent interference between multiple queues
+// =============================================================================
+
+@addField(BaseScriptableAction)
+private let m_queueModCostOverrideTargets: array<EntityID>;
+
+@addMethod(BaseScriptableAction)
+public func QueueMod_SetCostOverrideForTarget(targetID: EntityID, override: Bool) -> Void {
+    if (override) {
+        // Add target to override list if not already present
+        if (!ArrayContains(this.m_queueModCostOverrideTargets, targetID)) {
+            ArrayPush(this.m_queueModCostOverrideTargets, targetID);
+        }
+    } else {
+        // Remove target from override list
+        ArrayRemove(this.m_queueModCostOverrideTargets, targetID);
+    }
+}
+
+@addMethod(BaseScriptableAction)
+public func QueueMod_HasCostOverrideForTarget(targetID: EntityID) -> Bool {
+    return ArrayContains(this.m_queueModCostOverrideTargets, targetID);
+}
+
+@addMethod(BaseScriptableAction)
+public func QueueMod_ClearCostOverrideForTarget(targetID: EntityID) -> Void {
+    ArrayRemove(this.m_queueModCostOverrideTargets, targetID);
+}
+
+@wrapMethod(BaseScriptableAction)
+public func GetCost() -> Int32 {
+    // Check if this action has cost override for its target
+    // Use the action's actual target (requester) for the override check
+    let targetID: EntityID = this.GetRequesterID();
+    if (EntityID.IsDefined(targetID) && this.QueueMod_HasCostOverrideForTarget(targetID)) {
+        return 0;
+    }
+    
+    // Otherwise use vanilla cost calculation
+    return wrappedMethod();
+}
+
+// =============================================================================
+// CLEANUP COST OVERRIDE AFTER ACTION EXECUTION
+// =============================================================================
+
+@wrapMethod(BaseScriptableAction)
+public func ProcessRPGAction(gameInstance: GameInstance) -> Void {
+    let targetID: EntityID = this.GetRequesterID();
+    
+    // Execute the action first
+    wrappedMethod(gameInstance);
+    
+    // Clear cost override after execution to prevent interference
+    if (EntityID.IsDefined(targetID)) {
+        this.QueueMod_ClearCostOverrideForTarget(targetID);
+    }
+}
+
+// =============================================================================
 // Cooldown Detection and Management
 // =============================================================================
 
@@ -113,6 +174,11 @@ private func QueueMod_HandleQueuedExecution() -> Bool {
         return false;
     }
 
+    // Set target-specific cost override BEFORE any operations
+    if (IsDefined(scriptableAction)) {
+        scriptableAction.QueueMod_SetCostOverrideForTarget(targetID, true);
+    }
+
     // Try to queue
     let queueHelper: ref<QueueModHelper> = player.GetQueueModHelper();
     let uniqueKey: String = s"\(ToString(targetID))::\(actionName)::\(GameInstance.GetTimeSystem(this.m_gameInstance).GetSimTime())";
@@ -124,9 +190,13 @@ private func QueueMod_HandleQueuedExecution() -> Bool {
         this.ApplyQueueModCooldownWithData(this.m_selectedData);
         this.QM_FireQueueEvent(n"ItemAdded", this.m_selectedData);
         
-        QueueModLog(n"DEBUG", n"QUEUE", s"Successfully queued: \(actionName)");
+        QueueModLog(n"DEBUG", n"QUEUE", s"Successfully queued: \(actionName) for target: \(ToString(targetID))");
         return true;
     } else {
+        // Failed to queue - clear target-specific override
+        if (IsDefined(scriptableAction)) {
+            scriptableAction.QueueMod_ClearCostOverrideForTarget(targetID);
+        }
         QueueModLog(n"ERROR", n"QUEUE", s"Failed to queue: \(actionName)");
         return false;
     }
