@@ -116,6 +116,9 @@ private func BuildQuickHackCommandsForQueue(
     let prereqsToCheck: array<wref<IPrereq_Record>>;
     let targetActivePrereqs: array<wref<ObjectActionPrereq_Record>>;
 
+    QueueModLog(n"DEBUG", n"QUEUE", s"=== BUILDING QUEUE COMMANDS FOR \(GetLocalizedText(this.GetDisplayName())) ===");
+    QueueModLog(n"DEBUG", n"QUEUE", s"Available quickhacks: \(ArraySize(playerQHacksList)), puppet actions: \(ArraySize(puppetActions))");
+
     if ArraySize(playerQHacksList) == 0 {
         let newCommand: ref<QuickhackData> = new QuickhackData();
         newCommand.m_title = "LocKey#42171";
@@ -124,6 +127,7 @@ private func BuildQuickHackCommandsForQueue(
         newCommand.m_actionState = EActionInactivityReson.Invalid;
         newCommand.m_description = "LocKey#42172";
         ArrayPush(commands, newCommand);
+        QueueModLog(n"DEBUG", n"QUEUE", "No quickhacks available - added empty command");
         return;
     }
 
@@ -136,11 +140,15 @@ private func BuildQuickHackCommandsForQueue(
             let actionMatchDeck: Bool = false;
             let matchedAction: ref<PuppetAction>;
             let interactionChoice: InteractionChoice;
+            let hackTitle: String = LocKeyToString(actionRecord.ObjectActionUI().Caption());
+
+            QueueModLog(n"DEBUG", n"QUEUE", s"--- Processing quickhack #\(i): \(hackTitle) ---");
+            QueueModLog(n"DEBUG", n"QUEUE", s"Action name: \(ToString(actionRecord.ActionName()))");
 
             // Set basic properties first
             newCommand.m_actionOwnerName = actionOwnerName;
             newCommand.m_actionOwner = this.GetEntityID();
-            newCommand.m_title = LocKeyToString(actionRecord.ObjectActionUI().Caption());
+            newCommand.m_title = hackTitle;
             newCommand.m_description = LocKeyToString(actionRecord.ObjectActionUI().Description());
             newCommand.m_icon = actionRecord.ObjectActionUI().CaptionIcon().TexturePartID().GetID();
             newCommand.m_iconCategory = actionRecord.GameplayCategory().IconName();
@@ -162,16 +170,21 @@ private func BuildQuickHackCommandsForQueue(
             // Get cooldown info
             ArrayClear(actionStartEffects);
             actionRecord.StartEffects(actionStartEffects);
+            QueueModLog(n"DEBUG", n"QUEUE", s"Checking \(ArraySize(actionStartEffects)) start effects for cooldown");
             let j: Int32 = 0;
             while j < ArraySize(actionStartEffects) {
                 if Equals(actionStartEffects[j].StatusEffect().StatusEffectType().Type(), gamedataStatusEffectType.PlayerCooldown) {
                     actionStartEffects[j].StatusEffect().Duration().StatModifiers(statModifiers);
                     newCommand.m_cooldown = RPGManager.CalculateStatModifiers(statModifiers, this.GetGame(), playerRef, Cast<StatsObjectID>(playerRef.GetEntityID()), Cast<StatsObjectID>(playerRef.GetEntityID()));
                     newCommand.m_cooldownTweak = actionStartEffects[j].StatusEffect().GetID();
+                    QueueModLog(n"DEBUG", n"QUEUE", s"Found cooldown: \(newCommand.m_cooldown)s, tweak: \(TDBID.ToStringDEBUG(newCommand.m_cooldownTweak))");
                     ArrayClear(statModifiers);
                     break; // Break after finding cooldown
                 }
                 j += 1;
+            }
+            if newCommand.m_cooldown == 0.00 {
+                QueueModLog(n"DEBUG", n"QUEUE", "No cooldown found for this quickhack");
             }
             ArrayClear(statModifiers);
 
@@ -179,38 +192,46 @@ private func BuildQuickHackCommandsForQueue(
             newCommand.m_duration = this.GetQuickHackDuration(playerQHacksList[i].actionRecord, EntityGameInterface.GetEntity(this.GetEntity()) as GameObject, Cast<StatsObjectID>(this.GetEntityID()), playerRef.GetEntityID());
 
             // Find matching action
+            QueueModLog(n"DEBUG", n"QUEUE", s"Searching for matching action in \(ArraySize(puppetActions)) puppet actions");
             let k: Int32 = 0;
             while k < ArraySize(puppetActions) {
                 if Equals(actionRecord.ActionName(), puppetActions[k].GetObjectActionRecord().ActionName()) {
                     actionMatchDeck = true;
+                    QueueModLog(n"DEBUG", n"QUEUE", s"MATCH FOUND: Action \(ToString(actionRecord.ActionName())) at index \(k)");
                     
                     if actionRecord.Priority() >= puppetActions[k].GetObjectActionRecord().Priority() {
                         puppetActions[k].SetObjectActionID(actionRecord.GetID());
+                        QueueModLog(n"DEBUG", n"QUEUE", "Updated puppet action with higher priority action record");
                     }
                     
                     matchedAction = puppetActions[k];
                     newCommand.m_costRaw = puppetActions[k].GetBaseCost();
                     newCommand.m_cost = puppetActions[k].GetCost();
+                    QueueModLog(n"DEBUG", n"QUEUE", s"Costs: raw=\(newCommand.m_costRaw), final=\(newCommand.m_cost)");
                     
                     // Check if action is possible and visible
                     if !puppetActions[k].IsPossible(this) || !puppetActions[k].IsVisible(playerRef) {
                         puppetActions[k].SetInactiveWithReason(false, "LocKey#7019");
+                        QueueModLog(n"DEBUG", n"QUEUE", "Action not possible or not visible - marked inactive");
                         break;
                     }
                     
                     newCommand.m_uploadTime = puppetActions[k].GetActivationTime();
                     interactionChoice = puppetActions[k].GetInteractionChoice();
+                    QueueModLog(n"DEBUG", n"QUEUE", s"Upload time: \(newCommand.m_uploadTime)s");
                     
                     // Get title from interaction choice if available
                     let l: Int32 = 0;
                     while l < ArraySize(interactionChoice.captionParts.parts) {
                         if IsDefined(interactionChoice.captionParts.parts[l] as InteractionChoiceCaptionStringPart) {
                             newCommand.m_title = GetLocalizedText((interactionChoice.captionParts.parts[l] as InteractionChoiceCaptionStringPart).content);
+                            QueueModLog(n"DEBUG", n"QUEUE", s"Updated title from interaction: \(newCommand.m_title)");
                         }
                         l += 1;
                     }
                     
                     if puppetActions[k].IsInactive() {
+                        QueueModLog(n"DEBUG", n"QUEUE", "Puppet action is inactive - breaking");
                         break;
                     }
                     
@@ -218,10 +239,12 @@ private func BuildQuickHackCommandsForQueue(
                     if !puppetActions[k].CanPayCost() {
                         newCommand.m_actionState = EActionInactivityReson.OutOfMemory;
                         puppetActions[k].SetInactiveWithReason(false, "LocKey#27398");
+                        QueueModLog(n"DEBUG", n"QUEUE", "Cannot pay cost - marked as out of memory");
                     }
                     
                     // Check target active prereqs
                     if actionRecord.GetTargetActivePrereqsCount() > 0 {
+                        QueueModLog(n"DEBUG", n"QUEUE", s"Checking \(actionRecord.GetTargetActivePrereqsCount()) target active prereqs");
                         ArrayClear(targetActivePrereqs);
                         actionRecord.TargetActivePrereqs(targetActivePrereqs);
                         let m: Int32 = 0;
@@ -230,6 +253,7 @@ private func BuildQuickHackCommandsForQueue(
                             targetActivePrereqs[m].FailureConditionPrereq(prereqsToCheck);
                             if !RPGManager.CheckPrereqs(prereqsToCheck, this) {
                                 puppetActions[k].SetInactiveWithReason(false, targetActivePrereqs[m].FailureExplanation());
+                                QueueModLog(n"DEBUG", n"QUEUE", s"Prereq failed: \(GetLocalizedText(targetActivePrereqs[m].FailureExplanation()))");
                                 break;
                             }
                             m += 1;
@@ -240,46 +264,75 @@ private func BuildQuickHackCommandsForQueue(
                 }
                 k += 1;
             }
+            
+            if !actionMatchDeck {
+                QueueModLog(n"DEBUG", n"QUEUE", "NO MATCH FOUND - action does not match target deck");
+            }
 
             // Set final state based on matching and validation
+            QueueModLog(n"DEBUG", n"QUEUE", "=== STATE ASSIGNMENT LOGIC ===");
             if !actionMatchDeck {
                 newCommand.m_isLocked = true;
                 newCommand.m_inactiveReason = "LocKey#10943";
                 newCommand.m_actionState = EActionInactivityReson.Invalid;
+                QueueModLog(n"DEBUG", n"QUEUE", "FINAL STATE: LOCKED (no deck match) - Invalid");
             } else {
                 if IsDefined(matchedAction) {
                     // Check for duplicates in queue
                     let actionID: TweakDBID = matchedAction.GetObjectActionID();
                     let isDuplicate: Bool = ArrayContains(this.m_queuedActionIDs, actionID);
                     
+                    QueueModLog(n"DEBUG", n"QUEUE", s"Action ID: \(TDBID.ToStringDEBUG(actionID))");
+                    QueueModLog(n"DEBUG", n"QUEUE", s"Checking duplicates in cache (size: \(ArraySize(this.m_queuedActionIDs)))");
+                    QueueModLog(n"DEBUG", n"QUEUE", s"Is duplicate: \(isDuplicate)");
+                    
                     if isDuplicate {
                         newCommand.m_isLocked = true;
                         newCommand.m_inactiveReason = "LocKey#40765";
                         newCommand.m_actionState = EActionInactivityReson.Locked;
                         newCommand.m_action = matchedAction;
-                    } 
-                    else if TDBID.IsValid(newCommand.m_cooldownTweak) && 
-                           StatusEffectSystem.ObjectHasStatusEffect(playerRef, newCommand.m_cooldownTweak) {
-                        newCommand.m_isLocked = true;
-                        newCommand.m_inactiveReason = "LocKey#27399";
-                        newCommand.m_actionState = EActionInactivityReson.Locked;
-                        newCommand.m_action = matchedAction;
+                        QueueModLog(n"DEBUG", n"QUEUE", "FINAL STATE: LOCKED (duplicate in queue) - Locked");
                     } 
                     else {
-                        if matchedAction.IsInactive() {
+                        // Check cooldown status
+                        let hasCooldownTweak: Bool = TDBID.IsValid(newCommand.m_cooldownTweak);
+                        let isOnCooldown: Bool = false;
+                        
+                        if hasCooldownTweak {
+                            isOnCooldown = StatusEffectSystem.ObjectHasStatusEffect(playerRef, newCommand.m_cooldownTweak);
+                            QueueModLog(n"DEBUG", n"QUEUE", s"Cooldown tweak valid: \(hasCooldownTweak)");
+                            QueueModLog(n"DEBUG", n"QUEUE", s"Player has cooldown effect: \(isOnCooldown)");
+                            QueueModLog(n"DEBUG", n"QUEUE", s"Cooldown tweak ID: \(TDBID.ToStringDEBUG(newCommand.m_cooldownTweak))");
+                        } else {
+                            QueueModLog(n"DEBUG", n"QUEUE", "No valid cooldown tweak - skipping cooldown check");
+                        }
+                        
+                        if hasCooldownTweak && isOnCooldown {
                             newCommand.m_isLocked = true;
-                            newCommand.m_inactiveReason = matchedAction.GetInactiveReason();
+                            newCommand.m_inactiveReason = "LocKey#27399";
                             newCommand.m_actionState = EActionInactivityReson.Locked;
                             newCommand.m_action = matchedAction;
-                        } else {
-                            newCommand.m_actionState = EActionInactivityReson.Ready;
-                            newCommand.m_action = matchedAction;
+                            QueueModLog(n"DEBUG", n"QUEUE", "FINAL STATE: LOCKED (on cooldown) - Locked");
+                        } 
+                        else {
+                            if matchedAction.IsInactive() {
+                                newCommand.m_isLocked = true;
+                                newCommand.m_inactiveReason = matchedAction.GetInactiveReason();
+                                newCommand.m_actionState = EActionInactivityReson.Locked;
+                                newCommand.m_action = matchedAction;
+                                QueueModLog(n"DEBUG", n"QUEUE", s"FINAL STATE: LOCKED (action inactive) - reason: \(GetLocalizedText(matchedAction.GetInactiveReason()))");
+                            } else {
+                                newCommand.m_actionState = EActionInactivityReson.Ready;
+                                newCommand.m_action = matchedAction;
+                                QueueModLog(n"DEBUG", n"QUEUE", "FINAL STATE: READY - Available for queueing");
+                            }
                         }
                     }
                 } else {
                     newCommand.m_isLocked = true;
                     newCommand.m_inactiveReason = "LocKey#10943";
                     newCommand.m_actionState = EActionInactivityReson.Invalid;
+                    QueueModLog(n"DEBUG", n"QUEUE", "FINAL STATE: LOCKED (no matched action) - Invalid");
                 }
             }
 
@@ -287,26 +340,34 @@ private func BuildQuickHackCommandsForQueue(
             
             if !newCommand.m_isLocked {
                 newCommand.m_actionState = EActionInactivityReson.Ready;
+                QueueModLog(n"DEBUG", n"QUEUE", "State override: Setting to Ready (not locked)");
             }
 
+            QueueModLog(n"DEBUG", n"QUEUE", s"Command summary - Title: \(newCommand.m_title), Locked: \(newCommand.m_isLocked), State: \(newCommand.m_actionState), Reason: \(GetLocalizedText(newCommand.m_inactiveReason))");
             ArrayPush(commands, newCommand);
+        } else {
+            QueueModLog(n"DEBUG", n"QUEUE", s"Skipping non-puppet quickhack: \(LocKeyToString(actionRecord.ObjectActionUI().Caption()))");
         }
         i += 1;
     }
 
     // Sync action states
+    QueueModLog(n"DEBUG", n"QUEUE", "=== SYNCING ACTION STATES ===");
     let n: Int32 = 0;
     while n < ArraySize(commands) {
         if commands[n].m_isLocked && IsDefined(commands[n].m_action) {
             let puppetAction: ref<PuppetAction> = commands[n].m_action as PuppetAction;
             if IsDefined(puppetAction) {
                 puppetAction.SetInactiveWithReason(false, commands[n].m_inactiveReason);
+                QueueModLog(n"DEBUG", n"QUEUE", s"Synced action state for \(commands[n].m_title): inactive with reason \(GetLocalizedText(commands[n].m_inactiveReason))");
             }
         }
         n += 1;
     }
 
+    QueueModLog(n"DEBUG", n"QUEUE", s"Sorting \(ArraySize(commands)) commands by priority");
     QuickhackModule.SortCommandPriority(commands, this.GetGame());
+    QueueModLog(n"DEBUG", n"QUEUE", s"=== QUEUE BUILD COMPLETE FOR \(GetLocalizedText(this.GetDisplayName())) ===");
 }
 
 // =============================================================================
