@@ -264,10 +264,18 @@ private func BuildQuickHackCommandsForQueue(
 // Queue Execution on Upload Completion
 // =============================================================================
 
+// Add these fields to ScriptedPuppet
+@addField(ScriptedPuppet)
+private let m_hackingResistanceMod: ref<gameConstantStatModifierData>;
+
+@addField(ScriptedPuppet)
+private let m_mnemonicEffectsActive: Bool;
+
 @wrapMethod(ScriptedPuppet)
 protected cb func OnUploadProgressStateChanged(evt: ref<UploadProgramProgressEvent>) -> Bool {
     let result: Bool = wrappedMethod(evt);
-
+    QueueModLog(n"DEBUG", n"QUICKHACK", s"OnUploadProgressStateChanged: \(evt.state)");
+    
     if Equals(evt.progressBarContext, EProgressBarContext.QuickHack) && 
        Equals(evt.progressBarType, EProgressBarType.UPLOAD) {
         
@@ -280,8 +288,42 @@ protected cb func OnUploadProgressStateChanged(evt: ref<UploadProgramProgressEve
             return result;
         }
         
+        // MNEMONIC: Apply on upload START
+        if Equals(evt.state, EUploadProgramState.STARTED) && !this.m_mnemonicEffectsActive {
+            let player: ref<PlayerPuppet> = GetPlayer(this.GetGame());
+            if IsDefined(player) {
+                let playerID: EntityID = player.GetEntityID();
+                
+                // Apply mnemonic resistance reduction
+                let value: Float = GameInstance.GetStatsSystem(this.GetGame())
+                    .GetStatValue(Cast<StatsObjectID>(playerID), gamedataStatType.LowerHackingResistanceOnHack);
+                
+                if value > 0.00 {
+                    this.m_hackingResistanceMod = new gameConstantStatModifierData();
+                    this.m_hackingResistanceMod.statType = gamedataStatType.HackingResistance;
+                    this.m_hackingResistanceMod.modifierType = gameStatModifierType.Additive;
+                    this.m_hackingResistanceMod.value = value * -1.00;
+                    GameInstance.GetStatsSystem(this.GetGame()).AddModifier(Cast<StatsObjectID>(this.GetEntityID()), this.m_hackingResistanceMod);
+                    QueueModLog(n"DEBUG", n"QUICKHACK", s"Applied mnemonic resistance: -\(value)");
+                }
+                                
+                this.m_mnemonicEffectsActive = true;
+            }
+        }
+        
         // Only process queue/cache for COMPLETED uploads (target is alive)
         if Equals(evt.state, EUploadProgramState.COMPLETED) {
+            // MNEMONIC: Remove on upload COMPLETE
+            if this.m_mnemonicEffectsActive {
+                if IsDefined(this.m_hackingResistanceMod) {
+                    GameInstance.GetStatsSystem(this.GetGame()).RemoveModifier(Cast<StatsObjectID>(this.GetEntityID()), this.m_hackingResistanceMod);
+                    this.m_hackingResistanceMod = null;
+                    QueueModLog(n"DEBUG", n"QUICKHACK", "Removed mnemonic resistance");
+                }
+                
+                this.m_mnemonicEffectsActive = false;
+            }
+            
             let queue: ref<QueueModActionQueue> = this.GetQueueModActionQueue();
             if IsDefined(queue) && queue.GetQueueSize() > 0 {
                 let entry: ref<QueueModEntry> = queue.PopNextEntry();
