@@ -108,9 +108,13 @@ private func BuildQuickHackCommandsForQueue(
     let playerRef: ref<PlayerPuppet> = GetPlayer(this.GetGame());
     let actionOwnerName: CName = StringToName(this.GetTweakDBFullDisplayName(true));
     let iceLVL: Float = this.GetICELevel();
+    let isBreached: Bool = this.IsBreached();
     let playerQHacksList: array<PlayerQuickhackData> = RPGManager.GetPlayerQuickHackListWithQuality(playerRef);
     let actionStartEffects: array<wref<ObjectActionEffect_Record>>;
+    let actionCompletionEffects: array<wref<ObjectActionEffect_Record>>;
     let statModifiers: array<wref<StatModifier_Record>>;
+    let prereqsToCheck: array<wref<IPrereq_Record>>;
+    let targetActivePrereqs: array<wref<ObjectActionPrereq_Record>>;
 
     if ArraySize(playerQHacksList) == 0 {
         let newCommand: ref<QuickhackData> = new QuickhackData();
@@ -131,46 +135,9 @@ private func BuildQuickHackCommandsForQueue(
             let newCommand: ref<QuickhackData> = new QuickhackData();
             let actionMatchDeck: Bool = false;
             let matchedAction: ref<PuppetAction>;
+            let interactionChoice: InteractionChoice;
 
-            let i1: Int32 = 0;
-            while i1 < ArraySize(puppetActions) {
-                if Equals(actionRecord.ActionName(), puppetActions[i1].GetObjectActionRecord().ActionName()) {
-                    actionMatchDeck = true;
-                    
-                    if actionRecord.Priority() >= puppetActions[i1].GetObjectActionRecord().Priority() {
-                        puppetActions[i1].SetObjectActionID(playerQHacksList[i].actionRecord.GetID());
-                        matchedAction = puppetActions[i1];
-                    } else {
-                        actionRecord = puppetActions[i1].GetObjectActionRecord();
-                        matchedAction = puppetActions[i1];
-                    }
-                    
-                    newCommand.m_uploadTime = matchedAction.GetActivationTime();
-                    newCommand.m_duration = matchedAction.GetDurationValue();
-                    break;
-                }
-                i1 += 1;
-            }
-
-            // Get cooldown info
-            ArrayClear(actionStartEffects);
-            actionRecord.StartEffects(actionStartEffects);
-            let i1: Int32 = 0;
-            while i1 < ArraySize(actionStartEffects) {
-                if Equals(actionStartEffects[i1].StatusEffect().StatusEffectType().Type(), gamedataStatusEffectType.PlayerCooldown) {
-                    actionStartEffects[i1].StatusEffect().Duration().StatModifiers(statModifiers);
-                    newCommand.m_cooldown = RPGManager.CalculateStatModifiers(statModifiers, this.GetGame(), playerRef, Cast<StatsObjectID>(playerRef.GetEntityID()), Cast<StatsObjectID>(playerRef.GetEntityID()));
-                    newCommand.m_cooldownTweak = actionStartEffects[i1].StatusEffect().GetID();
-                    ArrayClear(statModifiers);
-                }
-                if newCommand.m_cooldown != 0.00 {
-                    break;
-                }
-                i1 += 1;
-            }
-            ArrayClear(statModifiers);
-
-            // Set basic properties
+            // Set basic properties first
             newCommand.m_actionOwnerName = actionOwnerName;
             newCommand.m_actionOwner = this.GetEntityID();
             newCommand.m_title = LocKeyToString(actionRecord.ObjectActionUI().Caption());
@@ -184,18 +151,104 @@ private func BuildQuickHackCommandsForQueue(
             newCommand.m_actionState = EActionInactivityReson.Locked;
             newCommand.m_quality = playerQHacksList[i].quality;
             newCommand.m_costRaw = BaseScriptableAction.GetBaseCostStatic(playerRef, actionRecord);
+            newCommand.m_networkBreached = isBreached;
             newCommand.m_category = actionRecord.HackCategory();
-            newCommand.m_actionMatchesTarget = actionMatchDeck;
-            
-            // State logic
-            if IsDefined(newCommand.m_category) && Equals(newCommand.m_category.EnumName(), n"NotAHack") {
-                newCommand.m_isLocked = true;
-                newCommand.m_inactiveReason = "LocKey#40765";
-                newCommand.m_actionState = EActionInactivityReson.Locked;
-            } else {
-                if actionMatchDeck && IsDefined(matchedAction) {
-                    newCommand.m_cost = matchedAction.GetCost();
+
+            // Get completion effects
+            ArrayClear(actionCompletionEffects);
+            actionRecord.CompletionEffects(actionCompletionEffects);
+            newCommand.m_actionCompletionEffects = actionCompletionEffects;
+
+            // Get cooldown info
+            ArrayClear(actionStartEffects);
+            actionRecord.StartEffects(actionStartEffects);
+            let j: Int32 = 0;
+            while j < ArraySize(actionStartEffects) {
+                if Equals(actionStartEffects[j].StatusEffect().StatusEffectType().Type(), gamedataStatusEffectType.PlayerCooldown) {
+                    actionStartEffects[j].StatusEffect().Duration().StatModifiers(statModifiers);
+                    newCommand.m_cooldown = RPGManager.CalculateStatModifiers(statModifiers, this.GetGame(), playerRef, Cast<StatsObjectID>(playerRef.GetEntityID()), Cast<StatsObjectID>(playerRef.GetEntityID()));
+                    newCommand.m_cooldownTweak = actionStartEffects[j].StatusEffect().GetID();
+                    ArrayClear(statModifiers);
+                    break; // Break after finding cooldown
+                }
+                j += 1;
+            }
+            ArrayClear(statModifiers);
+
+            // Get duration
+            newCommand.m_duration = this.GetQuickHackDuration(playerQHacksList[i].actionRecord, EntityGameInterface.GetEntity(this.GetEntity()) as GameObject, Cast<StatsObjectID>(this.GetEntityID()), playerRef.GetEntityID());
+
+            // Find matching action
+            let k: Int32 = 0;
+            while k < ArraySize(puppetActions) {
+                if Equals(actionRecord.ActionName(), puppetActions[k].GetObjectActionRecord().ActionName()) {
+                    actionMatchDeck = true;
                     
+                    if actionRecord.Priority() >= puppetActions[k].GetObjectActionRecord().Priority() {
+                        puppetActions[k].SetObjectActionID(actionRecord.GetID());
+                    }
+                    
+                    matchedAction = puppetActions[k];
+                    newCommand.m_costRaw = puppetActions[k].GetBaseCost();
+                    newCommand.m_cost = puppetActions[k].GetCost();
+                    
+                    // Check if action is possible and visible
+                    if !puppetActions[k].IsPossible(this) || !puppetActions[k].IsVisible(playerRef) {
+                        puppetActions[k].SetInactiveWithReason(false, "LocKey#7019");
+                        break;
+                    }
+                    
+                    newCommand.m_uploadTime = puppetActions[k].GetActivationTime();
+                    interactionChoice = puppetActions[k].GetInteractionChoice();
+                    
+                    // Get title from interaction choice if available
+                    let l: Int32 = 0;
+                    while l < ArraySize(interactionChoice.captionParts.parts) {
+                        if IsDefined(interactionChoice.captionParts.parts[l] as InteractionChoiceCaptionStringPart) {
+                            newCommand.m_title = GetLocalizedText((interactionChoice.captionParts.parts[l] as InteractionChoiceCaptionStringPart).content);
+                        }
+                        l += 1;
+                    }
+                    
+                    if puppetActions[k].IsInactive() {
+                        break;
+                    }
+                    
+                    // Check cost
+                    if !puppetActions[k].CanPayCost() {
+                        newCommand.m_actionState = EActionInactivityReson.OutOfMemory;
+                        puppetActions[k].SetInactiveWithReason(false, "LocKey#27398");
+                    }
+                    
+                    // Check target active prereqs
+                    if actionRecord.GetTargetActivePrereqsCount() > 0 {
+                        ArrayClear(targetActivePrereqs);
+                        actionRecord.TargetActivePrereqs(targetActivePrereqs);
+                        let m: Int32 = 0;
+                        while m < ArraySize(targetActivePrereqs) {
+                            ArrayClear(prereqsToCheck);
+                            targetActivePrereqs[m].FailureConditionPrereq(prereqsToCheck);
+                            if !RPGManager.CheckPrereqs(prereqsToCheck, this) {
+                                puppetActions[k].SetInactiveWithReason(false, targetActivePrereqs[m].FailureExplanation());
+                                break;
+                            }
+                            m += 1;
+                        }
+                    }
+                    
+                    break;
+                }
+                k += 1;
+            }
+
+            // Set final state based on matching and validation
+            if !actionMatchDeck {
+                newCommand.m_isLocked = true;
+                newCommand.m_inactiveReason = "LocKey#10943";
+                newCommand.m_actionState = EActionInactivityReson.Invalid;
+            } else {
+                if IsDefined(matchedAction) {
+                    // Check for duplicates in queue
                     let actionID: TweakDBID = matchedAction.GetObjectActionID();
                     let isDuplicate: Bool = ArrayContains(this.m_queuedActionIDs, actionID);
                     
@@ -205,7 +258,8 @@ private func BuildQuickHackCommandsForQueue(
                         newCommand.m_actionState = EActionInactivityReson.Locked;
                         newCommand.m_action = matchedAction;
                     } 
-                    else if newCommand.m_cooldown > 0.00 && StatusEffectSystem.ObjectHasStatusEffect(playerRef, newCommand.m_cooldownTweak) {
+                    else if TDBID.IsValid(newCommand.m_cooldownTweak) && 
+                           StatusEffectSystem.ObjectHasStatusEffect(playerRef, newCommand.m_cooldownTweak) {
                         newCommand.m_isLocked = true;
                         newCommand.m_inactiveReason = "LocKey#27399";
                         newCommand.m_actionState = EActionInactivityReson.Locked;
@@ -218,15 +272,8 @@ private func BuildQuickHackCommandsForQueue(
                             newCommand.m_actionState = EActionInactivityReson.Locked;
                             newCommand.m_action = matchedAction;
                         } else {
-                            if !matchedAction.CanPayCost() {
-                                newCommand.m_actionState = EActionInactivityReson.OutOfMemory;
-                                newCommand.m_isLocked = true;
-                                newCommand.m_inactiveReason = "LocKey#27398";
-                                newCommand.m_action = matchedAction;
-                            } else {
-                                newCommand.m_actionState = EActionInactivityReson.Ready;
-                                newCommand.m_action = matchedAction;
-                            }
+                            newCommand.m_actionState = EActionInactivityReson.Ready;
+                            newCommand.m_action = matchedAction;
                         }
                     }
                 } else {
@@ -236,6 +283,8 @@ private func BuildQuickHackCommandsForQueue(
                 }
             }
 
+            newCommand.m_actionMatchesTarget = actionMatchDeck;
+            
             if !newCommand.m_isLocked {
                 newCommand.m_actionState = EActionInactivityReson.Ready;
             }
@@ -245,16 +294,16 @@ private func BuildQuickHackCommandsForQueue(
         i += 1;
     }
 
-    // Sync action states and sort
-    let j: Int32 = 0;
-    while j < ArraySize(commands) {
-        if commands[j].m_isLocked && IsDefined(commands[j].m_action) {
-            let puppetAction: ref<PuppetAction> = commands[j].m_action as PuppetAction;
+    // Sync action states
+    let n: Int32 = 0;
+    while n < ArraySize(commands) {
+        if commands[n].m_isLocked && IsDefined(commands[n].m_action) {
+            let puppetAction: ref<PuppetAction> = commands[n].m_action as PuppetAction;
             if IsDefined(puppetAction) {
-                puppetAction.SetInactiveWithReason(false, commands[j].m_inactiveReason);
+                puppetAction.SetInactiveWithReason(false, commands[n].m_inactiveReason);
             }
         }
-        j += 1;
+        n += 1;
     }
 
     QuickhackModule.SortCommandPriority(commands, this.GetGame());
