@@ -126,66 +126,74 @@ private func BuildQuickHackCommandsForQueue(
     let i: Int32 = 0;
     while i < ArraySize(playerQHacksList) {
         let actionRecord: wref<ObjectAction_Record> = playerQHacksList[i].actionRecord;
+        let originalActionRecord: wref<ObjectAction_Record> = actionRecord; // Keep reference to original
         
         if Equals(actionRecord.ObjectActionType().Type(), gamedataObjectActionType.PuppetQuickHack) {
             let newCommand: ref<QuickhackData> = new QuickhackData();
             let actionMatchDeck: Bool = false;
             let matchedAction: ref<PuppetAction>;
 
-            let i1: Int32 = 0;
-            while i1 < ArraySize(puppetActions) {
-                if Equals(actionRecord.ActionName(), puppetActions[i1].GetObjectActionRecord().ActionName()) {
+            // FIXED: Use separate variable for puppet action matching
+            let puppetActionIndex: Int32 = 0;
+            while puppetActionIndex < ArraySize(puppetActions) {
+                if Equals(originalActionRecord.ActionName(), puppetActions[puppetActionIndex].GetObjectActionRecord().ActionName()) {
                     actionMatchDeck = true;
                     
-                    if actionRecord.Priority() >= puppetActions[i1].GetObjectActionRecord().Priority() {
-                        puppetActions[i1].SetObjectActionID(playerQHacksList[i].actionRecord.GetID());
-                        matchedAction = puppetActions[i1];
+                    if originalActionRecord.Priority() >= puppetActions[puppetActionIndex].GetObjectActionRecord().Priority() {
+                        puppetActions[puppetActionIndex].SetObjectActionID(playerQHacksList[i].actionRecord.GetID());
+                        matchedAction = puppetActions[puppetActionIndex];
+                        // Keep using original actionRecord for consistency
                     } else {
-                        actionRecord = puppetActions[i1].GetObjectActionRecord();
-                        matchedAction = puppetActions[i1];
+                        // FIXED: Don't switch actionRecord reference - use puppet's action record for costs but original for cooldowns
+                        matchedAction = puppetActions[puppetActionIndex];
+                        // actionRecord stays as original for cooldown calculations
                     }
                     
                     newCommand.m_uploadTime = matchedAction.GetActivationTime();
                     newCommand.m_duration = matchedAction.GetDurationValue();
                     break;
                 }
-                i1 += 1;
+                puppetActionIndex += 1;
             }
 
-            // Get cooldown info
+            // FIXED: Get cooldown info using original actionRecord and separate variable
             ArrayClear(actionStartEffects);
-            actionRecord.StartEffects(actionStartEffects);
-            let i1: Int32 = 0;
-            while i1 < ArraySize(actionStartEffects) {
-                if Equals(actionStartEffects[i1].StatusEffect().StatusEffectType().Type(), gamedataStatusEffectType.PlayerCooldown) {
-                    actionStartEffects[i1].StatusEffect().Duration().StatModifiers(statModifiers);
+            originalActionRecord.StartEffects(actionStartEffects);
+            let cooldownIndex: Int32 = 0;
+            while cooldownIndex < ArraySize(actionStartEffects) {
+                if Equals(actionStartEffects[cooldownIndex].StatusEffect().StatusEffectType().Type(), gamedataStatusEffectType.PlayerCooldown) {
+                    actionStartEffects[cooldownIndex].StatusEffect().Duration().StatModifiers(statModifiers);
                     newCommand.m_cooldown = RPGManager.CalculateStatModifiers(statModifiers, this.GetGame(), playerRef, Cast<StatsObjectID>(playerRef.GetEntityID()), Cast<StatsObjectID>(playerRef.GetEntityID()));
-                    newCommand.m_cooldownTweak = actionStartEffects[i1].StatusEffect().GetID();
+                    newCommand.m_cooldownTweak = actionStartEffects[cooldownIndex].StatusEffect().GetID();
                     ArrayClear(statModifiers);
+                    break; // Break only after finding PlayerCooldown specifically
                 }
-                if newCommand.m_cooldown != 0.00 {
-                    break;
-                }
-                i1 += 1;
+                cooldownIndex += 1;
             }
             ArrayClear(statModifiers);
 
-            // Set basic properties
+            // Set basic properties using original actionRecord for consistency
             newCommand.m_actionOwnerName = actionOwnerName;
             newCommand.m_actionOwner = this.GetEntityID();
-            newCommand.m_title = LocKeyToString(actionRecord.ObjectActionUI().Caption());
-            newCommand.m_description = LocKeyToString(actionRecord.ObjectActionUI().Description());
-            newCommand.m_icon = actionRecord.ObjectActionUI().CaptionIcon().TexturePartID().GetID();
-            newCommand.m_iconCategory = actionRecord.GameplayCategory().IconName();
-            newCommand.m_type = actionRecord.ObjectActionType().Type();
+            newCommand.m_title = LocKeyToString(originalActionRecord.ObjectActionUI().Caption());
+            newCommand.m_description = LocKeyToString(originalActionRecord.ObjectActionUI().Description());
+            newCommand.m_icon = originalActionRecord.ObjectActionUI().CaptionIcon().TexturePartID().GetID();
+            newCommand.m_iconCategory = originalActionRecord.GameplayCategory().IconName();
+            newCommand.m_type = originalActionRecord.ObjectActionType().Type();
             newCommand.m_isInstant = false;
             newCommand.m_ICELevel = iceLVL;
             newCommand.m_ICELevelVisible = false;
             newCommand.m_actionState = EActionInactivityReson.Locked;
             newCommand.m_quality = playerQHacksList[i].quality;
-            newCommand.m_costRaw = BaseScriptableAction.GetBaseCostStatic(playerRef, actionRecord);
-            newCommand.m_category = actionRecord.HackCategory();
+            newCommand.m_costRaw = BaseScriptableAction.GetBaseCostStatic(playerRef, originalActionRecord);
+            newCommand.m_category = originalActionRecord.HackCategory();
             newCommand.m_actionMatchesTarget = actionMatchDeck;
+            
+            // FIXED: Set cost consistently - default to raw cost, override with matched action cost if available
+            newCommand.m_cost = newCommand.m_costRaw; // Default to raw cost
+            if IsDefined(matchedAction) {
+                newCommand.m_cost = matchedAction.GetCost(); // Override with actual matched action cost
+            }
             
             // State logic
             if IsDefined(newCommand.m_category) && Equals(newCommand.m_category.EnumName(), n"NotAHack") {
@@ -194,8 +202,6 @@ private func BuildQuickHackCommandsForQueue(
                 newCommand.m_actionState = EActionInactivityReson.Locked;
             } else {
                 if actionMatchDeck && IsDefined(matchedAction) {
-                    newCommand.m_cost = matchedAction.GetCost();
-                    
                     let actionID: TweakDBID = matchedAction.GetObjectActionID();
                     let isDuplicate: Bool = ArrayContains(this.m_queuedActionIDs, actionID);
                     
