@@ -265,10 +265,6 @@ private func BuildQuickHackCommandsForQueue(
                 k += 1;
             }
             
-            if !actionMatchDeck {
-                QueueModLog(n"DEBUG", n"QUEUE", "NO MATCH FOUND - action does not match target deck");
-            }
-
             // Set final state based on matching and validation
             QueueModLog(n"DEBUG", n"QUEUE", "=== STATE ASSIGNMENT LOGIC ===");
             if !actionMatchDeck {
