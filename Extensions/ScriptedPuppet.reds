@@ -242,7 +242,7 @@ private func BuildQuickHackCommandsForQueue(
                         QueueModLog(n"DEBUG", n"QUEUE", "Cannot pay cost - marked as out of memory");
                     }
                     
-                    // Check target active prereqs
+                    // Check target active prereqs - BUT SKIP UPLOAD-RELATED ONES FOR QUEUE
                     if actionRecord.GetTargetActivePrereqsCount() > 0 {
                         QueueModLog(n"DEBUG", n"QUEUE", s"Checking \(actionRecord.GetTargetActivePrereqsCount()) target active prereqs");
                         ArrayClear(targetActivePrereqs);
@@ -251,10 +251,20 @@ private func BuildQuickHackCommandsForQueue(
                         while m < ArraySize(targetActivePrereqs) {
                             ArrayClear(prereqsToCheck);
                             targetActivePrereqs[m].FailureConditionPrereq(prereqsToCheck);
-                            if !RPGManager.CheckPrereqs(prereqsToCheck, this) {
-                                puppetActions[k].SetInactiveWithReason(false, targetActivePrereqs[m].FailureExplanation());
-                                QueueModLog(n"DEBUG", n"QUEUE", s"Prereq failed: \(GetLocalizedText(targetActivePrereqs[m].FailureExplanation()))");
-                                break;
+                            
+                            let prereqID: TweakDBID = targetActivePrereqs[m].GetID();
+                            let failureText: String = GetLocalizedText(targetActivePrereqs[m].FailureExplanation());
+                            QueueModLog(n"DEBUG", n"QUEUE", s"Prereq ID: \(TDBID.ToStringDEBUG(prereqID)) | Failure: \(failureText)");
+                            
+                            // QUEUE FIX: Skip the upload prereq that blocks queueing
+                            if Equals(prereqID, t"Prereqs.QuickHackUploadingPrereq") {
+                                QueueModLog(n"DEBUG", n"QUEUE", s"SKIPPING upload prereq: \(TDBID.ToStringDEBUG(prereqID))");
+                            } else {
+                                if !RPGManager.CheckPrereqs(prereqsToCheck, this) {
+                                    puppetActions[k].SetInactiveWithReason(false, targetActivePrereqs[m].FailureExplanation());
+                                    QueueModLog(n"DEBUG", n"QUEUE", s"Prereq failed: \(failureText)");
+                                    break;
+                                }
                             }
                             m += 1;
                         }
@@ -267,6 +277,12 @@ private func BuildQuickHackCommandsForQueue(
             
             // Set final state based on matching and validation
             QueueModLog(n"DEBUG", n"QUEUE", "=== STATE ASSIGNMENT LOGIC ===");
+                        // State logic
+            if IsDefined(newCommand.m_category) && Equals(newCommand.m_category.EnumName(), n"NotAHack") {
+                newCommand.m_isLocked = true;
+                newCommand.m_inactiveReason = "LocKey#40765";
+                newCommand.m_actionState = EActionInactivityReson.Locked;
+            } 
             if !actionMatchDeck {
                 newCommand.m_isLocked = true;
                 newCommand.m_inactiveReason = "LocKey#10943";
@@ -360,7 +376,21 @@ private func BuildQuickHackCommandsForQueue(
         }
         n += 1;
     }
-
+// Add this right before QuickhackModule.SortCommandPriority(commands, this.GetGame());
+QueueModLog(n"DEBUG", n"QUEUE", "=== PRE-SORT COMMAND DATA ===");
+let debugIndex: Int32 = 0;
+while debugIndex < ArraySize(commands) {
+    QueueModLog(n"DEBUG", n"QUEUE", s"[\(debugIndex)] \(commands[debugIndex].m_title)");
+    QueueModLog(n"DEBUG", n"QUEUE", s"  State: \(commands[debugIndex].m_actionState), Locked: \(commands[debugIndex].m_isLocked)");
+    QueueModLog(n"DEBUG", n"QUEUE", s"  Cost: \(commands[debugIndex].m_cost), Quality: \(commands[debugIndex].m_quality)");
+    if IsDefined(commands[debugIndex].m_action) {
+        let action: ref<PuppetAction> = commands[debugIndex].m_action as PuppetAction;
+        if IsDefined(action) {
+            QueueModLog(n"DEBUG", n"QUEUE", s"  Action Priority: \(action.GetObjectActionRecord().Priority())");
+        }
+    }
+    debugIndex += 1;
+}
     QueueModLog(n"DEBUG", n"QUEUE", s"Sorting \(ArraySize(commands)) commands by priority");
     QuickhackModule.SortCommandPriority(commands, this.GetGame());
     QueueModLog(n"DEBUG", n"QUEUE", s"=== QUEUE BUILD COMPLETE FOR \(GetLocalizedText(this.GetDisplayName())) ===");
